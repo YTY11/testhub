@@ -77,7 +77,7 @@
               <span>{{ $t('menu.requestHistory') }}</span>
             </el-menu-item>
             <el-menu-item index="/api-testing/environments">
-              <el-icon><Setting /></el-icon>
+              <el-icon><SetUp /></el-icon>
               <span>{{ $t('menu.environmentManagement') }}</span>
             </el-menu-item>
             <el-menu-item index="/api-testing/reports">

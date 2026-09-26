@@ -106,7 +106,7 @@
         </div>
 
         <!-- 登录模式切换 -->
-        <div class="mode-tabs">
+        <!-- <div class="mode-tabs">
           <button
             type="button"
             class="mode-tab"
@@ -123,7 +123,7 @@
           >
             短信登录
           </button>
-        </div>
+        </div> -->
 
         <el-form
           ref="formRef"
@@ -226,17 +226,17 @@
             </el-button>
           </el-form-item>
 
-          <div class="form-footer">
+          <!-- <div class="form-footer">
             <router-link to="/register" class="register-link">
               {{ $t('auth.noAccount') }}<span>{{ $t('auth.signUpNow') }}</span>
             </router-link>
-          </div>
+          </div> -->
         </el-form>
 
         <!-- 底部信息 -->
-        <div class="bottom-info">
+        <!-- <div class="bottom-info">
           <p>{{ $t('auth.copyright') }}</p>
-        </div>
+        </div> -->
       </div>
     </div>
   </div>
