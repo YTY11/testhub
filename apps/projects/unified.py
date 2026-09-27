@@ -101,6 +101,11 @@ def sync_project_shadows(project):
     if not _table_exists(ProjectAlias):
         return
 
+    # 项目已被删除（或其删除已提交）时，不再重建影子/别名，
+    # 否则会往 project_aliases 插入指向已删除 project_id 的行，触发外键 1452。
+    if not Project.objects.filter(pk=project.pk).exists():
+        return
+
     members = list(project.members.all())
 
     for module in MODULE_MODELS:

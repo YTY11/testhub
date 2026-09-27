@@ -4,10 +4,16 @@ from django.utils import timezone
 
 class User(AbstractUser):
     """扩展用户模型"""
+    ROLE_CHOICES = [
+        ('user', '普通用户'),
+        ('admin', '管理员'),
+    ]
     avatar = models.ImageField(upload_to='avatars/', null=True, blank=True, verbose_name='头像')
     phone = models.CharField(max_length=11, null=True, blank=True, verbose_name='手机号')
     department = models.CharField(max_length=100, null=True, blank=True, verbose_name='部门')
     position = models.CharField(max_length=100, null=True, blank=True, verbose_name='职位')
+    # 系统角色（与 is_superuser 保持同步）：user=普通用户 / admin=超级管理员
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='user', verbose_name='角色')
     is_active = models.BooleanField(default=True, verbose_name='是否激活')
     created_at = models.DateTimeField(default=timezone.now, verbose_name='创建时间')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')

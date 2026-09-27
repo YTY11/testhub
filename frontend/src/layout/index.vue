@@ -13,6 +13,18 @@
           text-color="#fff"
           active-text-color="#1890ff"
         >
+          <!-- 统一项目管理模块菜单 -->
+          <template v-if="currentModule === 'projects-management'">
+            <el-menu-item index="/projects-management">
+              <el-icon><Folder /></el-icon>
+              <span>{{ $t('menu.projectManagement') }}</span>
+            </el-menu-item>
+            <el-menu-item v-if="userStore.user?.is_superuser" index="/projects-management/users">
+              <el-icon><User /></el-icon>
+              <span>{{ $t('menu.userManagement') }}</span>
+            </el-menu-item>
+          </template>
+
           <!-- AI用例生成模块菜单 -->
           <template v-if="currentModule === 'ai-generation'">
             <el-sub-menu index="requirement">
@@ -444,7 +456,7 @@ import {
   Monitor, Folder, Document, Flag, Check, Collection, VideoPlay,
   DataAnalysis, ChatDotRound, DocumentCopy, Link, MagicStick,
   Odometer, Timer, Setting, AlarmClock, Bell, Aim, Edit, Cpu, ArrowDown, Cellphone, Connection, FolderOpened, Tickets, Plus,
-  SetUp, TrendCharts
+  SetUp, TrendCharts, User
 } from '@element-plus/icons-vue'
 import logoSvg from '@/assets/images/logo.svg'
 import logoHomePng from '@/assets/images/logo_home.png'
@@ -473,6 +485,7 @@ const handleLanguageChange = (lang) => {
 
 const currentModule = computed(() => {
   if (route.path.startsWith('/ai-generation')) return 'ai-generation'
+  if (route.path.startsWith('/projects-management')) return 'projects-management'
   if (route.path.startsWith('/api-testing')) return 'api-testing'
   if (route.path.startsWith('/ui-automation')) return 'ui-automation'
   if (route.path.startsWith('/defects')) return 'defects'
@@ -490,6 +503,7 @@ const currentModule = computed(() => {
 const moduleName = computed(() => {
   const map = {
     'ai-generation': t('modules.aiGeneration'),
+    'projects-management': t('modules.projectsManagement'),
     'api-testing': t('modules.apiTesting'),
     'ui-automation': t('modules.uiAutomation'),
     'defects': t('modules.defects'),
@@ -518,6 +532,10 @@ const breadcrumbTitle = computed(() => {
     '/ai-generation/testsuites': t('menu.suiteManagement'),
     '/ai-generation/executions': t('menu.executionRecords'),
     '/ai-generation/reports': t('menu.testReport'),
+
+    // 统一项目管理
+    '/projects-management': t('menu.projectManagement'),
+    '/projects-management/users': t('menu.userManagement'),
 
     // 接口测试
     '/api-testing/dashboard': t('menu.dashboard'),

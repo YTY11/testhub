@@ -5,8 +5,10 @@ from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import filters, permissions, serializers, viewsets
+from rest_framework.exceptions import PermissionDenied
 
 from .models import Project, ProjectAlias, ProjectMember
+from .permissions import can_manage_project, get_user_role
 from .unified import (
     ensure_project_unification,
     get_legacy_model,
@@ -61,6 +63,8 @@ class UnifiedProjectSerializer(serializers.ModelSerializer):
         required=False
     )
 
+    can_manage = serializers.SerializerMethodField(read_only=True)
+
     project_type = serializers.SerializerMethodField(read_only=True)
     base_url = serializers.SerializerMethodField(read_only=True)
     default_env = serializers.SerializerMethodField(read_only=True)
@@ -85,6 +89,7 @@ class UnifiedProjectSerializer(serializers.ModelSerializer):
             'owner',
             'members',
             'member_ids',
+            'can_manage',
             'project_type',
             'base_url',
             'default_env',
@@ -114,6 +119,12 @@ class UnifiedProjectSerializer(serializers.ModelSerializer):
             for item in obj.projectmember_set.select_related('user')
         ]
         return UserBriefSerializer(members, many=True).data
+
+    def get_can_manage(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return False
+        return get_user_role(request.user, obj) in ('superuser', 'owner', 'admin')
 
     def _get_shadow(self, obj):
         return get_project_shadow(obj, self.get_module())
@@ -302,6 +313,8 @@ class UnifiedModuleProjectViewSet(viewsets.ModelViewSet):
         ensure_project_unification()
 
         user = self.request.user
+        if user.is_superuser:
+            return Project.objects.all()
         return Project.objects.filter(
             Q(owner=user) |
             Q(projectmember__user=user)
@@ -333,11 +346,19 @@ class UnifiedModuleProjectViewSet(viewsets.ModelViewSet):
         self.check_object_permissions(self.request, obj)
         return obj
 
+    def perform_update(self, serializer):
+        """更新项目需具备管理权限（超管 / 负责人 / admin）。"""
+        if not can_manage_project(self.request.user, serializer.instance):
+            raise PermissionDenied('无权限修改该项目')
+        serializer.save()
+
     def perform_destroy(self, instance):
         """
         删除统一项目时，会同步删除四个模块的兼容项目行。
-        各模块原项目表中的子资源按原有 on_delete 规则级联删除。
+        仅超管 / 负责人 / admin 可删除，普通成员（developer/tester/viewer）禁止。
         """
+        if not can_manage_project(self.request.user, instance):
+            raise PermissionDenied('无权限删除该项目')
         instance.delete()
 
 

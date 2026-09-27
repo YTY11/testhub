@@ -105,6 +105,103 @@ class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
 
+# ========== 超级管理员：用户与权限管理 ==========
+
+@api_view(['GET', 'POST'])
+@permission_classes([permissions.IsAuthenticated])
+def admin_user_manage(request):
+    """用户与权限管理：仅超级管理员。
+
+    - GET  : 用户列表（含角色、启禁用状态）。
+    - POST : 新增用户（可指定是否超管）。
+    """
+    if not request.user.is_superuser:
+        return Response({'error': '仅超级管理员可管理用户'}, status=status.HTTP_403_FORBIDDEN)
+
+    if request.method == 'POST':
+        from .serializers import AdminUserCreateSerializer
+        serializer = AdminUserCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        return Response(_admin_user_payload(user), status=status.HTTP_201_CREATED)
+
+    users = User.objects.all().order_by('-is_superuser', 'username')
+    return Response([_admin_user_payload(u) for u in users])
+
+
+@api_view(['PUT', 'PATCH'])
+@permission_classes([permissions.IsAuthenticated])
+def admin_user_update(request, user_id):
+    """更新用户资料 / 系统角色 / 启禁用。仅超级管理员。"""
+    if not request.user.is_superuser:
+        return Response({'error': '仅超级管理员可管理用户'}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        target = User.objects.get(pk=user_id)
+    except User.DoesNotExist:
+        return Response({'error': '用户不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+    data = request.data
+
+    # 保护：不能取消自己的超管权限
+    if target.pk == request.user.pk and data.get('is_superuser') is False:
+        return Response({'error': '不能取消自己的超级管理员权限'}, status=status.HTTP_400_BAD_REQUEST)
+    # 保护：不能禁用自己
+    if target.pk == request.user.pk and data.get('is_active') is False:
+        return Response({'error': '不能禁用当前登录账号'}, status=status.HTTP_400_BAD_REQUEST)
+    # 保护：至少保留一个超管
+    if target.is_superuser and data.get('is_superuser') is False:
+        if User.objects.filter(is_superuser=True).count() <= 1:
+            return Response({'error': '至少保留一个超级管理员'}, status=status.HTTP_400_BAD_REQUEST)
+
+    from .serializers import AdminUserUpdateSerializer
+    serializer = AdminUserUpdateSerializer(
+        target,
+        data=data,
+        partial=True
+    )
+    serializer.is_valid(raise_exception=True)
+    user = serializer.save()
+    return Response(_admin_user_payload(user))
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def admin_reset_password(request, user_id):
+    """重置用户密码。仅超级管理员。"""
+    if not request.user.is_superuser:
+        return Response({'error': '仅超级管理员可重置密码'}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        target = User.objects.get(pk=user_id)
+    except User.DoesNotExist:
+        return Response({'error': '用户不存在'}, status=status.HTTP_404_NOT_FOUND)
+
+    password = request.data.get('password')
+    if not password or len(str(password)) < 6:
+        return Response({'error': '新密码至少6位'}, status=status.HTTP_400_BAD_REQUEST)
+
+    target.set_password(str(password))
+    target.save(update_fields=['password'])
+    return Response({'message': '密码已重置'})
+
+
+def _admin_user_payload(user):
+    return {
+        'id': user.id,
+        'username': user.username,
+        'email': user.email,
+        'first_name': user.first_name,
+        'last_name': user.last_name,
+        'phone': user.phone,
+        'department': user.department,
+        'position': user.position,
+        'is_active': user.is_active,
+        'is_superuser': user.is_superuser,
+        'date_joined': user.date_joined.isoformat() if user.date_joined else None,
+    }
+
+
 # ========== 图形验证码 & 短信验证码 ==========
 
 @api_view(['GET'])

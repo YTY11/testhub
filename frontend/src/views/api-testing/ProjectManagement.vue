@@ -38,9 +38,9 @@
       </el-table-column>
       <el-table-column :label="$t('apiTesting.common.operation')" width="200">
         <template #default="scope">
-          <el-button link type="primary" @click="editProject(scope.row)">{{ $t('apiTesting.common.edit') }}</el-button>
+          <el-button v-if="scope.row.can_manage" link type="primary" @click="editProject(scope.row)">{{ $t('apiTesting.common.edit') }}</el-button>
           <el-button link type="primary" @click="viewProject(scope.row)">{{ $t('apiTesting.common.view') }}</el-button>
-          <el-button link type="danger" @click="deleteProject(scope.row)">{{ $t('apiTesting.common.delete') }}</el-button>
+          <el-button v-if="scope.row.can_manage" link type="danger" @click="deleteProject(scope.row)">{{ $t('apiTesting.common.delete') }}</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -194,7 +194,7 @@
 
       <template #footer>
         <el-button @click="showViewDialog = false">{{ $t('apiTesting.common.close') }}</el-button>
-        <el-button type="primary" @click="editProject(viewedProject)">{{ $t('apiTesting.common.edit') }}</el-button>
+        <el-button v-if="viewedProject?.can_manage" type="primary" @click="editProject(viewedProject)">{{ $t('apiTesting.common.edit') }}</el-button>
       </template>
     </el-dialog>
   </div>

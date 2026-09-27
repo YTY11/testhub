@@ -8,6 +8,7 @@ urlpatterns = [
     path('<int:project_id>/members/', views.get_project_members, name='get-project-members'),
     path('<int:project_id>/members/add/', views.add_project_member, name='add-member'),
     path('<int:project_id>/members/<int:member_id>/', views.remove_project_member, name='remove-member'),
+    path('<int:project_id>/members/<int:member_id>/role/', views.update_project_member_role, name='update-member-role'),
     path('<int:project_id>/environments/', views.ProjectEnvironmentListCreateView.as_view(), name='environment-list'),
     path('list/', project_list_views.user_projects_list, name='user-projects-list'),
 ]

@@ -26,7 +26,7 @@
 
         <el-tab-pane :label="$t('project.projectMembers')" name="members">
           <div class="members-section">
-            <el-button type="primary" @click="showAddMemberDialog = true">{{ $t('project.addMember') }}</el-button>
+            <el-button type="primary" @click="openAddMember">{{ $t('project.addMember') }}</el-button>
             <el-table :data="project?.members || []" style="width: 100%; margin-top: 20px;">
               <el-table-column prop="user.username" :label="$t('project.username')" />
               <el-table-column prop="user.email" :label="$t('project.email')" />
@@ -63,11 +63,34 @@
         </el-tab-pane>
       </el-tabs>
     </div>
+
+    <!-- 添加成员对话框 -->
+    <el-dialog v-model="showAddMemberDialog" :title="$t('project.addMember')" width="460px">
+      <el-form label-width="90px">
+        <el-form-item :label="$t('project.username')">
+          <el-select v-model="addForm.user_id" filterable style="width: 100%" :placeholder="$t('project.addMember')">
+            <el-option v-for="u in users" :key="u.id" :label="u.username" :value="u.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="$t('project.role')">
+          <el-select v-model="addForm.role" style="width: 100%">
+            <el-option :label="$t('project.roleAdmin')" value="admin" />
+            <el-option :label="$t('project.roleDeveloper')" value="developer" />
+            <el-option :label="$t('project.roleTester')" value="tester" />
+            <el-option :label="$t('project.roleViewer')" value="viewer" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showAddMemberDialog = false">{{ $t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="addingMember" @click="addMember">{{ $t('project.addMember') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
@@ -80,6 +103,12 @@ const project = ref(null)
 const activeTab = ref('info')
 const showAddMemberDialog = ref(false)
 const showAddEnvDialog = ref(false)
+const users = ref([])
+const addingMember = ref(false)
+const addForm = reactive({
+  user_id: null,
+  role: 'tester'
+})
 
 const fetchProject = async () => {
   try {
@@ -87,6 +116,42 @@ const fetchProject = async () => {
     project.value = response.data
   } catch (error) {
     ElMessage.error(t('project.fetchDetailFailed'))
+  }
+}
+
+const loadUsers = async () => {
+  try {
+    const response = await api.get('/users/')
+    users.value = response.data.results || response.data || []
+  } catch (error) {
+    users.value = []
+  }
+}
+
+const openAddMember = () => {
+  addForm.user_id = null
+  addForm.role = 'tester'
+  showAddMemberDialog.value = true
+}
+
+const addMember = async () => {
+  if (!addForm.user_id) {
+    ElMessage.warning(t('project.selectUserFirst'))
+    return
+  }
+  addingMember.value = true
+  try {
+    await api.post(`/projects/${route.params.id}/members/add/`, {
+      user_id: addForm.user_id,
+      role: addForm.role
+    })
+    ElMessage.success(t('project.addMemberSuccess'))
+    showAddMemberDialog.value = false
+    fetchProject()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.error || t('project.addMemberFailed'))
+  } finally {
+    addingMember.value = false
   }
 }
 
@@ -126,6 +191,7 @@ const removeMember = async (member) => {
 
 onMounted(() => {
   fetchProject()
+  loadUsers()
 })
 </script>
 

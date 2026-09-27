@@ -67,6 +67,15 @@
       <p class="subtitle">{{ $t('home.subtitle') }}</p>
 
       <div class="cards-container">
+        <!-- 项目管理（统一入口） -->
+        <div class="nav-card" @click="handleNavigate('projects')" role="button" tabindex="0">
+          <div class="card-icon projects-icon">
+            <el-icon><Folder /></el-icon>
+          </div>
+          <h3>{{ $t('home.projectManagement') }}</h3>
+          <p>{{ $t('home.projectManagementDesc') }}</p>
+        </div>
+
         <!-- AI用例生成 -->
         <div class="nav-card" @click="handleNavigate('ai')" role="button" tabindex="0">
           <div class="card-icon ai-icon">
@@ -225,7 +234,7 @@ import { useUserStore } from '@/stores/user'
 import { useAppStore } from '@/stores/app'
 import { track } from '@/utils/tracker'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { MagicStick, Link, Monitor, DataLine, Cpu, Setting, ChatDotRound, UserFilled, ArrowDown, Cellphone, Tickets, Select, Odometer, Connection, Document } from '@element-plus/icons-vue'
+import { MagicStick, Link, Monitor, DataLine, Cpu, Setting, ChatDotRound, UserFilled, ArrowDown, Cellphone, Tickets, Select, Odometer, Connection, Document, Folder } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -309,6 +318,7 @@ const handleLogout = () => {
 
 const handleNavigate = (type) => {
   const routes = {
+    'projects': '/projects-management',
     'ai': '/ai-generation/requirement-analysis',
     'api': '/api-testing/dashboard',
     'ui': '/ui-automation/dashboard',
@@ -611,6 +621,11 @@ const handleNavigate = (type) => {
   &.perf-icon {
     background: #e6fffb;
     color: #13c2c2;
+  }
+
+  &.projects-icon {
+    background: #e6f7ff;
+    color: #1890ff;
   }
 }
 

@@ -17,7 +17,8 @@ export default {
     monitor: '监控中心',
     performanceTesting: '性能测试',
     mcp: 'MCP 管理端',
-    docs: '文档中心'
+    docs: '文档中心',
+    projectsManagement: '项目管理'
   },
   menu: {
     // AI用例生成
@@ -26,6 +27,7 @@ export default {
     aiGeneratedTestcases: 'AI生成用例记录',
     promptConfig: '提示词配置',
     projectManagement: '项目管理',
+    userManagement: '用户管理',
     testCases: '测试用例',
     versionManagement: '版本管理',
     reviewManagement: '评审管理',

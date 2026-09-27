@@ -9,9 +9,12 @@ from .models import Project
 def user_projects_list(request):
     """获取用户有权限访问的项目列表，用于下拉选择"""
     user = request.user
-    projects = Project.objects.filter(
+    queryset = Project.objects.filter(
         models.Q(owner=user) | models.Q(members=user)
-    ).distinct().values('id', 'name', 'status').order_by('name')
+    ).distinct()
+    if user.is_superuser:
+        queryset = Project.objects.all()
+    projects = queryset.values('id', 'name', 'status').order_by('name')
     
     return Response({
         'results': list(projects)

@@ -63,6 +63,24 @@ const routes = [
         meta: { requiresAuth: true }
     },
     {
+        path: '/projects-management',
+        component: Layout,
+        meta: { requiresAuth: true },
+        children: [
+            {
+                path: '',
+                name: 'UnifiedProjects',
+                component: () => import('@/views/projects/UnifiedProjectManagement.vue')
+            },
+            {
+                path: 'users',
+                name: 'UnifiedUsers',
+                component: () => import('@/views/projects/UserManagement.vue'),
+                meta: { requiresSuperuser: true }
+            }
+        ]
+    },
+    {
         path: '/login',
         name: 'Login',
         component: Login,
@@ -750,6 +768,8 @@ router.beforeEach(async (to, _from, next) => {
     if (to.meta.requiresAuth && !userStore.isAuthenticated) {
         next('/login')
     } else if (to.meta.requiresGuest && userStore.isAuthenticated) {
+        next('/home')
+    } else if (to.meta.requiresSuperuser && !userStore.user?.is_superuser) {
         next('/home')
     } else {
         next()

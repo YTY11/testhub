@@ -260,7 +260,7 @@ export const useUserStore = defineStore('user', () => {
   }
 
   const initAuth = async () => {
-    // 从 localStorage 恢复用户信息
+    // 从 localStorage 恢复用户信息（仅作为临时兜底，随后会从服务端刷新）
     if (!user.value) {
       const savedUser = localStorage.getItem('user')
       if (savedUser) {
@@ -283,14 +283,12 @@ export const useUserStore = defineStore('user', () => {
         }
       }
 
-      // 获取用户信息
-      if (!user.value) {
-        try {
-          await fetchProfile()
-        } catch (error) {
-          console.error('获取用户信息失败:', error)
-          await logout()
-        }
+      // 始终从服务端拉取最新用户信息，确保角色/启禁用等权限变更即时生效
+      try {
+        await fetchProfile()
+      } catch (error) {
+        console.error('获取用户信息失败:', error)
+        await logout()
       }
 
       startAutoRefresh()

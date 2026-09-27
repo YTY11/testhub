@@ -17,7 +17,8 @@ export default {
     monitor: 'Monitor Center',
     performanceTesting: 'Performance Testing',
     mcp: 'MCP Console',
-    docs: 'Docs Center'
+    docs: 'Docs Center',
+    projectsManagement: 'Project Management'
   },
   menu: {
     // AI Test Case Generation
@@ -26,6 +27,7 @@ export default {
     aiGeneratedTestcases: 'AI Generated Test Cases',
     promptConfig: 'Prompt Configuration',
     projectManagement: 'Project Management',
+    userManagement: 'User Management',
     testCases: 'Test Cases',
     versionManagement: 'Version Management',
     reviewManagement: 'Review Management',
