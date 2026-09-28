@@ -298,6 +298,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { Plus, ArrowDown } from '@element-plus/icons-vue'
 import api from '@/utils/api'
+import { fetchAllFn } from '@/utils/pagination'
 import {
   getScheduledTasks,
   createScheduledTask,
@@ -440,9 +441,7 @@ const loadEnvironments = async () => {
 // 加载用户列表
 const loadUsers = async () => {
   try {
-    const response = await getUsers()
-    // 处理分页数据结构
-    const usersData = response.data.results || response.data
+    const usersData = await fetchAllFn(getUsers)
     users.value = usersData.map(user => ({
       ...user,
       display_name: user.first_name ? `${user.first_name}（${user.email}）` : `${user.username}（${user.email}）`

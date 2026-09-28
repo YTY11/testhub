@@ -252,6 +252,7 @@ import {
   comparePerfExecutions,
   createPerfComparisonReport
 } from '@/api/performance-testing'
+import { fetchAllFn } from '@/utils/pagination'
 import { statusTagType, slaTagType, formatTime, formatDuration, apiError } from './shared'
 
 const { t } = useI18n()
@@ -322,8 +323,8 @@ let chart = null
 // ------------------------------------------------------------------ //
 async function loadProjects() {
   try {
-    const res = await getPerfProjects({ page_size: 200 })
-    projects.value = res.data.results || res.data || []
+    const res = await fetchAllFn(getPerfProjects)
+    projects.value = res
   } catch (e) {
     projects.value = []
   }
@@ -331,10 +332,7 @@ async function loadProjects() {
 
 async function loadScenarios() {
   try {
-    const params = { page_size: 200 }
-    if (filters.project) params.project = filters.project
-    const res = await getPerfScenarios(params)
-    scenarios.value = res.data.results || res.data || []
+    scenarios.value = await fetchAllFn(getPerfScenarios, filters.project ? { project: filters.project } : {})
   } catch (e) {
     scenarios.value = []
   }

@@ -425,6 +425,7 @@ import {
   runPerfScheduledTaskNow,
   getPerfScheduledTaskExecutions
 } from '@/api/performance-testing'
+import { fetchAllFn } from '@/utils/pagination'
 import { getChannels } from '@/api/monitor'
 import { statusTagType, slaTagType, formatTime, apiError } from './shared'
 
@@ -527,8 +528,8 @@ function emptyForm() {
 // ------------------------------------------------------------------ //
 async function loadProjects() {
   try {
-    const res = await getPerfProjects({ page_size: 200 })
-    projects.value = res.data.results || res.data || []
+    const res = await fetchAllFn(getPerfProjects)
+    projects.value = res
   } catch (e) {
     projects.value = []
   }
@@ -536,10 +537,7 @@ async function loadProjects() {
 
 async function loadScenarios(projectId, target) {
   try {
-    const params = { page_size: 200 }
-    if (projectId) params.project = projectId
-    const res = await getPerfScenarios(params)
-    const list = res.data.results || res.data || []
+    const list = await fetchAllFn(getPerfScenarios, projectId ? { project: projectId } : {})
     if (target === 'form') formScenarios.value = list
     else scenarios.value = list
   } catch (e) {
@@ -550,8 +548,8 @@ async function loadScenarios(projectId, target) {
 
 async function loadChannels() {
   try {
-    const res = await getChannels({ page_size: 200 })
-    channels.value = res.data.results || res.data || []
+    const res = await fetchAllFn(getChannels)
+    channels.value = res
   } catch (e) {
     channels.value = []
   }

@@ -57,11 +57,11 @@
               <el-icon><View /></el-icon>
               {{ $t('uiAutomation.common.view') }}
             </el-button>
-            <el-button size="small" @click="editProject(row)">
+            <el-button v-if="row.can_manage" size="small" @click="editProject(row)">
               <el-icon><Edit /></el-icon>
               {{ $t('uiAutomation.common.edit') }}
             </el-button>
-            <el-button size="small" type="danger" @click="deleteProject(row.id)">
+            <el-button v-if="row.can_manage" size="small" type="danger" @click="deleteProject(row.id)">
               <el-icon><Delete /></el-icon>
               {{ $t('uiAutomation.common.delete') }}
             </el-button>

@@ -300,6 +300,7 @@ import {
   getTestExecutions,
   deleteTestExecution
 } from '@/api/ui_automation'
+import { fetchAllFn } from '@/utils/pagination'
 
 const { t } = useI18n()
 
@@ -325,8 +326,8 @@ const activeTab = ref('logs')
 // 加载项目列表
 const loadProjects = async () => {
   try {
-    const response = await getUiProjects({ page_size: 100 })
-    projects.value = response.data.results || response.data
+    const response = await fetchAllFn(getUiProjects)
+    projects.value = response
   } catch (error) {
     console.error('Failed to load projects:', error)
     ElMessage.error(t('uiAutomation.report.messages.loadProjectsFailed'))

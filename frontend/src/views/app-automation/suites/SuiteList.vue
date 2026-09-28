@@ -304,6 +304,7 @@ import {
   getPackageList,
   getAppProjects,
 } from '@/api/app-automation'
+import { fetchAllFn } from '@/utils/pagination'
 import { getExecutionStatusType, getExecutionStatusText, getDisplayStatus, formatDateTime } from '@/utils/app-automation-helpers'
 
 const { t } = useI18n()
@@ -376,13 +377,7 @@ const loadSuites = async () => {
 const loadDevices = async () => {
   devicesLoading.value = true
   try {
-    const res = await getDeviceList({ page_size: 100 })
-    const data = res.data
-    if (data.success !== undefined) {
-      availableDevices.value = data.data?.results || data.data || []
-    } else {
-      availableDevices.value = data.results || data || []
-    }
+    availableDevices.value = await fetchAllFn(getDeviceList)
   } catch (error) {
     console.error('加载设备失败:', error)
     availableDevices.value = []
@@ -393,13 +388,7 @@ const loadDevices = async () => {
 
 const loadPackages = async () => {
   try {
-    const res = await getPackageList({ page_size: 200 })
-    const data = res.data
-    if (data.success !== undefined) {
-      appPackages.value = data.data?.results || data.data || []
-    } else {
-      appPackages.value = data.results || data || []
-    }
+    appPackages.value = await fetchAllFn(getPackageList)
   } catch (error) {
     appPackages.value = []
   }
@@ -654,7 +643,7 @@ const getProgressStatus = (row) => {
 
 // ===== 初始化 =====
 onMounted(() => {
-  getAppProjects({ page_size: 100 }).then(res => { projectList.value = res.data.results || res.data || [] }).catch(() => {})
+  fetchAllFn(getAppProjects).then(res => { projectList.value = res || [] }).catch(() => {})
   loadSuites()
   loadDevices()
   loadPackages()

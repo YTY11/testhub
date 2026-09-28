@@ -231,6 +231,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search } from '@element-plus/icons-vue'
 import api from '@/utils/api'
+import { fetchAll } from '@/utils/pagination'
 import dayjs from 'dayjs'
 
 const { t } = useI18n()
@@ -339,8 +340,7 @@ const fetchStats = async () => {
 
 const fetchUsers = async () => {
   try {
-    const res = await api.get('/users/')
-    users.value = res.data.results || res.data || []
+    users.value = await fetchAll('/users/')
   } catch (e) {
     users.value = []
   }

@@ -191,6 +191,8 @@ export default {
     performanceTestingDesc: '复用接口资产的一键压测、实时监控与性能基线',
     mcpConsole: 'MCP 控制台',
     mcpConsoleDesc: 'MCP 工具调用日志与危险操作待确认审批',
+    jenkinsConsole: 'jenkins 构建记录',
+    jenkinsConsoleDesc: 'jenkins 构建记录查询、编辑与删除',
     docsCenter: '文档中心',
     docsCenterDesc: '平台使用手册与功能说明文档在线浏览',
 

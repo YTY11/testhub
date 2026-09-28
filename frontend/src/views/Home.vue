@@ -191,6 +191,15 @@
           <p>{{ $t('home.mcpConsoleDesc') }}</p>
         </div>
 
+        <!-- jenkins -->
+        <div class="nav-card" @click="handleNavigate('jenkins')" role="button" tabindex="0">
+          <div class="card-icon jenkins-icon">
+            <el-icon><User /></el-icon>
+          </div>
+          <h3>{{ $t('home.jenkinsConsole') }}</h3>
+          <p>{{ $t('home.jenkinsConsoleDesc') }}</p>
+        </div>
+
         <!-- 文档中心 -->
         <div class="nav-card" @click="handleNavigate('docs')" role="button" tabindex="0">
           <div class="card-icon docs-icon">
@@ -234,7 +243,7 @@ import { useUserStore } from '@/stores/user'
 import { useAppStore } from '@/stores/app'
 import { track } from '@/utils/tracker'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { MagicStick, Link, Monitor, DataLine, Cpu, Setting, ChatDotRound, UserFilled, ArrowDown, Cellphone, Tickets, Select, Odometer, Connection, Document, Folder } from '@element-plus/icons-vue'
+import { User, MagicStick, Link, Monitor, DataLine, Cpu, Setting, ChatDotRound, UserFilled, ArrowDown, Cellphone, Tickets, Select, Odometer, Connection, Document, Folder } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -317,6 +326,7 @@ const handleLogout = () => {
 }
 
 const handleNavigate = (type) => {
+  
   const routes = {
     'projects': '/projects-management',
     'ai': '/ai-generation/requirement-analysis',
@@ -332,6 +342,7 @@ const handleNavigate = (type) => {
     'performance': '/performance-testing/dashboard',
     'monitor': '/monitor/dashboard',
     'mcp': '/mcp/console',
+    'jenkins': '/jenkins',
     'docs': '/docs-center'
   }
 
@@ -611,6 +622,10 @@ const handleNavigate = (type) => {
   &.mcp-icon {
     background: #fff0f6;
     color: #eb2f96;
+  }
+  &.jenkins-icon {
+    background: #fffbe6;
+    color: #d48806;
   }
 
   &.docs-icon {

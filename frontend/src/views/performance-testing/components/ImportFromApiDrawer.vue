@@ -120,6 +120,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { getApiProjects, getApiRequests, getApiCollections } from '@/api/api-testing'
 import { importStepsFromApi, getPerfScenario } from '@/api/performance-testing'
+import { fetchAllFn } from '@/utils/pagination'
 
 // 导入 URL 中常见的 baseUrl 变量引用，仅用于在界面上展示（避免写进 i18n 触发插值陷阱）
 const token = '{{baseUrl}}'
@@ -232,8 +233,7 @@ watch(() => props.modelValue, (v) => {
 
 async function loadProjects() {
   try {
-    const res = await getApiProjects({ page_size: 200 })
-    projects.value = res.data.results || res.data || []
+    projects.value = await fetchAllFn(getApiProjects)
   } catch (e) { /* ignore */ }
 }
 
@@ -251,12 +251,10 @@ async function loadRequests() {
   if (!projectId.value) { requests.value = []; filteredRequests.value = []; collectionBaseUrls.value = []; return }
   loading.value = true
   try {
-    const res = await getApiRequests({ project: projectId.value, page_size: 500 })
-    requests.value = res.data.results || res.data || []
+    requests.value = await fetchAllFn(getApiRequests, { project: projectId.value })
     filterRequests()
     // 顺带收集来源集合的 base_url，作为 replace 模式的候选
-    const cres = await getApiCollections({ project: projectId.value, page_size: 200 })
-    const cols = cres.data.results || cres.data || []
+    const cols = await fetchAllFn(getApiCollections, { project: projectId.value })
     collectionBaseUrls.value = cols.map((c) => c.base_url).filter(Boolean)
   } catch (e) {
     ElMessage.error('加载接口用例失败')

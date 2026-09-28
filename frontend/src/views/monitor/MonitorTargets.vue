@@ -167,6 +167,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { Plus, VideoPlay, Edit, Delete, Monitor, Search } from '@element-plus/icons-vue'
 import ConfigForm from './MonitorTargetConfigForm.vue'
+import { fetchAllFn } from '@/utils/pagination'
 import {
   getTargets, getTarget, createTarget, updateTarget, deleteTarget,
   checkTargetNow, getChannels, getSchedulerStatus,
@@ -298,8 +299,7 @@ function onSizeChange(sz) {
 
 async function loadChannels() {
   try {
-    const res = await getChannels({ page_size: 200 })
-    channels.value = res.data.results || res.data || []
+    channels.value = await fetchAllFn(getChannels)
   } catch { channels.value = [] }
 }
 

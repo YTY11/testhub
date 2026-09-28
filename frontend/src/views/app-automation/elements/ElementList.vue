@@ -240,6 +240,7 @@ import {
   deleteAppElement as apiDeleteAppElement,
   getAppProjects
 } from '@/api/app-automation'
+import { fetchAllFn } from '@/utils/pagination'
 import { Search, Plus, Camera } from '@element-plus/icons-vue'
 import { formatDateTime } from '@/utils/app-automation-helpers'
 import { useI18n } from 'vue-i18n'
@@ -470,7 +471,7 @@ const getTypeName = (type) => {
 // formatDateTime 已从 app-automation-helpers 导入
 
 onMounted(() => {
-  getAppProjects({ page_size: 100 }).then(res => { projectList.value = res.data.results || res.data || [] }).catch(() => {})
+  fetchAllFn(getAppProjects).then(res => { projectList.value = res || [] }).catch(() => {})
   loadElements()
 })
 </script>

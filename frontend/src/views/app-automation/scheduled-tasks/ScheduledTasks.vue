@@ -265,6 +265,7 @@ import {
   getPackageList,
   getAppProjects,
 } from '@/api/app-automation.js'
+import { fetchAllFn } from '@/utils/pagination'
 
 const { t } = useI18n()
 
@@ -292,7 +293,7 @@ const defaultForm = {
 const form = reactive({ ...defaultForm })
 
 onMounted(() => {
-  getAppProjects({ page_size: 100 }).then(res => { projectList.value = res.data.results || res.data || [] }).catch(() => {})
+  fetchAllFn(getAppProjects).then(res => { projectList.value = res || [] }).catch(() => {})
   loadTasks()
   loadOptions()
 })
@@ -317,13 +318,13 @@ const loadOptions = async () => {
     const [s, tc, d, p] = await Promise.all([
       getTestSuiteList({ page_size: 200 }),
       getTestCaseList({ page_size: 500 }),
-      getDeviceList({ page_size: 100 }),
-      getPackageList({ page_size: 100 }),
+      fetchAllFn(getDeviceList),
+      fetchAllFn(getPackageList),
     ])
     suites.value = s.data.results || s.data || []
     testCases.value = tc.data.results || tc.data || []
-    devices.value = d.data.results || d.data || []
-    packages.value = p.data.results || p.data || []
+    devices.value = d || []
+    packages.value = p || []
   } catch (e) { console.error('加载选项失败', e) }
 }
 

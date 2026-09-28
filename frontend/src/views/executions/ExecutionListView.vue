@@ -342,6 +342,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Delete } from '@element-plus/icons-vue'
 import api from '@/utils/api'
+import { fetchAll } from '@/utils/pagination'
 
 const { t } = useI18n()
 
@@ -458,15 +459,15 @@ const fetchTestPlans = async () => {
 
 const fetchBasicData = async () => {
   try {
-    const [projectsRes, versionsRes, usersRes] = await Promise.all([
-      api.get('/projects/'), // 只显示用户参与的项目
-      api.get('/versions/'),
-      api.get('/users/users/') // 修正用户API路径
+    const [projectsVal, versionsVal, usersVal] = await Promise.all([
+      fetchAll('/projects/'), // 只显示用户参与的项目
+      fetchAll('/versions/'),
+      fetchAll('/users/users/') // 修正用户API路径
     ])
     
-    projects.value = (projectsRes.data.results || projectsRes.data || []).filter(item => item !== null && item !== undefined)
-    versions.value = (versionsRes.data.results || versionsRes.data || []).filter(item => item !== null && item !== undefined)
-    users.value = (usersRes.data.results || usersRes.data || []).filter(item => item !== null && item !== undefined)
+    projects.value = (projectsVal || []).filter(item => item !== null && item !== undefined)
+    versions.value = (versionsVal || []).filter(item => item !== null && item !== undefined)
+    users.value = (usersVal || []).filter(item => item !== null && item !== undefined)
   } catch (error) {
     console.error('获取基础数据失败:', error)
   }

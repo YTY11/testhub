@@ -175,6 +175,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search, Delete } from '@element-plus/icons-vue'
 import api from '@/utils/api'
+import { fetchAll } from '@/utils/pagination'
 import dayjs from 'dayjs'
 
 const { t } = useI18n()
@@ -229,8 +230,7 @@ const fetchVersions = async () => {
 
 const fetchProjects = async () => {
   try {
-    const response = await api.get('/projects/')
-    projects.value = response.data.results || response.data || []
+    projects.value = await fetchAll('/projects/')
   } catch (error) {
     ElMessage.error(t('version.fetchProjectsFailed'))
   }

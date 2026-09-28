@@ -158,6 +158,7 @@
 import { ref, onMounted } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { getChecks, getTargets } from '@/api/monitor'
+import { fetchAllFn } from '@/utils/pagination'
 
 const loading = ref(false)
 const list = ref([])
@@ -190,8 +191,7 @@ const prettyDetail = (d) => {
 
 const fetchTargets = async () => {
   try {
-    const res = await getTargets({ page_size: 200 })
-    targets.value = res.data.results || res.data || []
+    targets.value = await fetchAllFn(getTargets)
   } catch {
     targets.value = []
   }

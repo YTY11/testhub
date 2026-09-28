@@ -104,6 +104,8 @@ export default {
 
     // MCP
     mcpConsole: 'MCP Console',
+    // jenkins
+    jenkinsConsole: 'jenkins build log',
     // Docs Center
     docsCenter: 'Docs Center'
   }

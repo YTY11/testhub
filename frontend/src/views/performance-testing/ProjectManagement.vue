@@ -38,8 +38,8 @@
       </el-table-column>
       <el-table-column :label="t('performanceTesting.common.actions')" width="140" fixed="right">
         <template #default="{ row }">
-          <el-button size="small" @click="openEdit(row)">{{ t('performanceTesting.common.edit') }}</el-button>
-          <el-button size="small" type="danger" @click="remove(row)">{{ t('performanceTesting.common.delete') }}</el-button>
+          <el-button v-if="row.can_manage" size="small" @click="openEdit(row)">{{ t('performanceTesting.common.edit') }}</el-button>
+          <el-button v-if="row.can_manage" size="small" type="danger" @click="remove(row)">{{ t('performanceTesting.common.delete') }}</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -89,6 +89,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search } from '@element-plus/icons-vue'
 import { getPerfProjects, createPerfProject, updatePerfProject, deletePerfProject } from '@/api/performance-testing'
+import { fetchAllFn } from '@/utils/pagination'
 import { getUsers } from '@/api/api-testing'
 import { formatTime } from './shared'
 
@@ -196,8 +197,8 @@ function remove(row) {
 
 async function loadUsers() {
   try {
-    const res = await getUsers({ page_size: 200 })
-    users.value = res.data.results || res.data || []
+    const res = await fetchAllFn(getUsers)
+    users.value = res
   } catch (e) { /* ignore */ }
 }
 

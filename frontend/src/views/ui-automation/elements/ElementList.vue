@@ -227,6 +227,7 @@ import {
   getElementDetail,
   getLocatorStrategies
 } from '@/api/ui_automation'
+import { fetchAllFn } from '@/utils/pagination'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -315,8 +316,8 @@ const formatDate = (row, column, cellValue) => {
 // 加载项目列表
 const loadProjects = async () => {
   try {
-    const response = await getUiProjects({ page_size: 100 })
-    projects.value = response.data.results || response.data
+    const response = await fetchAllFn(getUiProjects)
+    projects.value = response
   } catch (error) {
     ElMessage.error(t('uiAutomation.project.messages.loadFailed'))
     console.error('获取项目列表失败:', error)
@@ -326,8 +327,8 @@ const loadProjects = async () => {
 // 加载定位策略
 const loadStrategies = async () => {
   try {
-    const response = await getLocatorStrategies()
-    strategies.value = response.data.results || response.data
+    const response = await fetchAllFn(getLocatorStrategies)
+    strategies.value = response
   } catch (error) {
     ElMessage.error(t('uiAutomation.element.messages.loadStrategiesFailed'))
     console.error('获取定位策略失败:', error)

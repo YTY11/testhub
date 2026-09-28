@@ -65,8 +65,8 @@
         <el-table-column :label="$t('appAutomation.common.operation')" min-width="150">
           <template #default="{ row }">
             <el-button type="primary" link size="small" @click="viewDetail(row)">{{ $t('appAutomation.common.details') }}</el-button>
-            <el-button type="warning" link size="small" @click="openEditDialog(row)">{{ $t('appAutomation.common.edit') }}</el-button>
-            <el-button type="danger" link size="small" @click="handleDelete(row)">{{ $t('appAutomation.common.delete') }}</el-button>
+            <el-button v-if="row.can_manage" type="warning" link size="small" @click="openEditDialog(row)">{{ $t('appAutomation.common.edit') }}</el-button>
+            <el-button v-if="row.can_manage" type="danger" link size="small" @click="handleDelete(row)">{{ $t('appAutomation.common.delete') }}</el-button>
           </template>
         </el-table-column>
       </el-table>

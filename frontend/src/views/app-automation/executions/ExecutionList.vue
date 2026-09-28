@@ -167,6 +167,7 @@ import {
   stopExecution as apiStopExecution,
   getAppProjects
 } from '@/api/app-automation'
+import { fetchAllFn } from '@/utils/pagination'
 import { Search, Refresh } from '@element-plus/icons-vue'
 import { getExecutionStatusType, getExecutionStatusText, getDisplayStatus, formatDateTime } from '@/utils/app-automation-helpers'
 import { useI18n } from 'vue-i18n'
@@ -278,7 +279,7 @@ const stopAutoRefresh = () => {
 }
 
 onMounted(() => {
-  getAppProjects({ page_size: 100 }).then(res => { projectList.value = res.data.results || res.data || [] }).catch(() => {})
+  fetchAllFn(getAppProjects).then(res => { projectList.value = res || [] }).catch(() => {})
   loadExecutions()
   startAutoRefresh()
 })

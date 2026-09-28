@@ -120,6 +120,7 @@ import {
   Odometer, Refresh, CircleCheck, CircleClose, Warning, DataAnalysis, Bell
 } from '@element-plus/icons-vue'
 import { getDashboard, getTargets, checkTargetNow, getSchedulerStatus } from '@/api/monitor'
+import { fetchAllFn } from '@/utils/pagination'
 
 const { t } = useI18n()
 
@@ -189,8 +190,7 @@ async function loadDashboard() {
 async function loadTargets() {
   loadingTargets.value = true
   try {
-    const res = await getTargets({ page_size: 200 })
-    targets.value = res.data.results || res.data || []
+    targets.value = await fetchAllFn(getTargets)
   } catch (e) {
     /* 忽略，目标列表为空不影响看板 */
   } finally {

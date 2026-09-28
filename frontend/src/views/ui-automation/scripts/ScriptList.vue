@@ -156,6 +156,7 @@ import {
   updateTestScript,
   deleteTestScript
 } from '@/api/ui_automation'
+import { fetchAllFn } from '@/utils/pagination'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -187,8 +188,8 @@ const renameForm = reactive({
 // 加载项目列表
 const loadProjects = async () => {
   try {
-    const response = await getUiProjects({ page_size: 100 })
-    projects.value = response.data.results || response.data
+    const response = await fetchAllFn(getUiProjects)
+    projects.value = response
   } catch (error) {
     ElMessage.error(t('uiAutomation.script.messages.loadProjectsFailed'))
     console.error('获取项目列表失败:', error)

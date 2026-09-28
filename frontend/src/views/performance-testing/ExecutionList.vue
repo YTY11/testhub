@@ -222,6 +222,7 @@ import {
   getPerfExecutions, deletePerfExecution, stopPerfExecution, reapStalePerfExecutions,
   setBaselineFromExecution, getPerfProjects, getPerfScenarios
 } from '@/api/performance-testing'
+import { fetchAllFn } from '@/utils/pagination'
 
 const route = useRoute()
 const router = useRouter()
@@ -260,8 +261,8 @@ function fmtNum(v) {
 
 async function loadProjects() {
   try {
-    const res = await getPerfProjects({ page_size: 200 })
-    projects.value = res.data.results || res.data || []
+    const res = await fetchAllFn(getPerfProjects)
+    projects.value = res
   } catch (e) {
     projects.value = []
   }
@@ -269,8 +270,8 @@ async function loadProjects() {
 
 async function loadScenarios() {
   try {
-    const res = await getPerfScenarios({ page_size: 200, project: filters.project || undefined })
-    scenarios.value = res.data.results || res.data || []
+    const res = await fetchAllFn(getPerfScenarios, { project: filters.project || undefined })
+    scenarios.value = res
   } catch (e) {
     scenarios.value = []
   }

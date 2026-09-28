@@ -89,6 +89,7 @@ import * as echarts from 'echarts'
 import { Odometer, Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getPerfProjects, getPerfDashboard, getPerfRequestStats } from '@/api/performance-testing'
+import { fetchAllFn } from '@/utils/pagination'
 import { statusTagType, slaTagType } from './shared'
 
 const { t } = useI18n()
@@ -129,8 +130,8 @@ function fmt(v) {
 
 async function loadProjects() {
   try {
-    const res = await getPerfProjects({ page_size: 200 })
-    projects.value = res.data.results || res.data || []
+    const res = await fetchAllFn(getPerfProjects)
+    projects.value = res
   } catch (e) { /* ignore */ }
 }
 

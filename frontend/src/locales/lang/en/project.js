@@ -189,6 +189,8 @@ export default {
     performanceTestingDesc: 'Reuse API assets for one-click load testing, realtime monitoring and performance baselines',
     mcpConsole: 'MCP Console',
     mcpConsoleDesc: 'MCP tool call logs and dangerous action approval',
+    jenkinsConsole: 'Jenkins build log',
+    jenkinsConsoleDesc: 'Jenkins build record query, editing and deletion',
     docsCenter: 'Docs Center',
     docsCenterDesc: 'Browse platform manuals and feature documentation online',
 

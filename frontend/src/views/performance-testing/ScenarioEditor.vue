@@ -739,6 +739,7 @@ import {
   executePerfScenario, debugPerfScenario, getPerfDataFiles,
   uploadPerfJmxScript, uploadPerfUploadFile, deletePerfDataFile
 } from '@/api/performance-testing'
+import { fetchAllFn } from '@/utils/pagination'
 
 const route = useRoute()
 const router = useRouter()
@@ -850,8 +851,8 @@ async function loadEngineStatus() {
 
 async function loadProjects() {
   try {
-    const res = await getPerfProjects({ page_size: 200 })
-    projects.value = res.data.results || res.data || []
+    const res = await fetchAllFn(getPerfProjects)
+    projects.value = res
   } catch (e) {
     projects.value = []
   }
@@ -862,8 +863,7 @@ async function loadDataFiles(projectId) {
   try {
     // 必须带 file_type=CSV：JMX 脚本与 CSV 参数化文件共用一张表，
     // 不过滤会把 .jmx 混进变量的 CSV 文件下拉里
-    const res = await getPerfDataFiles({ project: projectId, file_type: 'CSV', page_size: 200 })
-    dataFiles.value = res.data.results || res.data || []
+    dataFiles.value = await fetchAllFn(getPerfDataFiles, { project: projectId, file_type: 'CSV' })
   } catch (e) {
     dataFiles.value = []
   }
@@ -873,8 +873,7 @@ async function loadDataFiles(projectId) {
 async function loadScriptFiles(projectId) {
   if (!projectId) { scriptFiles.value = []; return }
   try {
-    const res = await getPerfDataFiles({ project: projectId, file_type: 'JMX', page_size: 200 })
-    scriptFiles.value = res.data.results || res.data || []
+    scriptFiles.value = await fetchAllFn(getPerfDataFiles, { project: projectId, file_type: 'JMX' })
   } catch (e) {
     scriptFiles.value = []
   }
@@ -888,8 +887,7 @@ async function loadScriptFiles(projectId) {
 async function loadUploadFiles(projectId) {
   if (!projectId) { uploadFiles.value = []; return }
   try {
-    const res = await getPerfDataFiles({ project: projectId, file_type: 'UPLOAD', page_size: 200 })
-    uploadFiles.value = res.data.results || res.data || []
+    uploadFiles.value = await fetchAllFn(getPerfDataFiles, { project: projectId, file_type: 'UPLOAD' })
   } catch (e) {
     uploadFiles.value = []
   }

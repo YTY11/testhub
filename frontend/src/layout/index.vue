@@ -375,6 +375,13 @@
               <span>{{ $t('menu.mcpConsole') }}</span>
             </el-menu-item>
           </template>
+          <!-- jenkins -->
+          <template v-else-if="currentModule === 'jenkins'">
+            <el-menu-item index="/jenkins">
+              <el-icon><User /></el-icon>
+              <span>{{ $t('menu.jenkinsConsole') }}</span>
+            </el-menu-item>
+          </template>
 
           <!-- 文档中心模块菜单 -->
           <template v-else-if="currentModule === 'docs'">
@@ -496,6 +503,7 @@ const currentModule = computed(() => {
   if (route.path.startsWith('/monitor')) return 'monitor'
   if (route.path.startsWith('/performance-testing')) return 'performance-testing'
   if (route.path.startsWith('/mcp')) return 'mcp'
+  if (route.path.startsWith('/jenkins')) return 'jenkins'
   if (route.path.startsWith('/docs-center')) return 'docs'
   return ''
 })

@@ -118,6 +118,7 @@ import {
   getPerfComparisonReport,
   deletePerfComparisonReport
 } from '@/api/performance-testing'
+import { fetchAllFn } from '@/utils/pagination'
 import { formatTime, apiError } from './shared'
 
 const { t } = useI18n()
@@ -172,8 +173,8 @@ function renderMarkdown(text) {
 
 async function loadProjects() {
   try {
-    const res = await getPerfProjects({ page_size: 200 })
-    projects.value = res.data.results || res.data || []
+    const res = await fetchAllFn(getPerfProjects)
+    projects.value = res
   } catch (e) {
     projects.value = []
   }

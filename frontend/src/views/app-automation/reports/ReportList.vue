@@ -388,6 +388,7 @@ import {
   getTestSuiteList, getTestSuiteExecutions,
   getAppProjects,
 } from '@/api/app-automation.js'
+import { fetchAllFn } from '@/utils/pagination'
 import { getExecutionStatusType, getExecutionStatusText, getDisplayStatus, formatDateTime } from '@/utils/app-automation-helpers.js'
 
 const { t } = useI18n()
@@ -402,7 +403,7 @@ function onTabChange(tab) {
 }
 
 onMounted(() => {
-  getAppProjects({ page_size: 100 }).then(res => { projectList.value = res.data.results || res.data || [] }).catch(() => {})
+  fetchAllFn(getAppProjects).then(res => { projectList.value = res || [] }).catch(() => {})
   loadSuiteReports()
 })
 

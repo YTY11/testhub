@@ -371,6 +371,7 @@ import {
   Folder, Document
 } from '@element-plus/icons-vue'
 import api from '@/utils/api'
+import { fetchAll } from '@/utils/pagination'
 import dayjs from 'dayjs'
 
 const { t } = useI18n()
@@ -488,8 +489,7 @@ const getEnvironmentName = (environmentId) => {
 
 const loadProjects = async () => {
   try {
-    const response = await api.get('/api-testing/projects/')
-    projects.value = response.data.results || response.data
+    projects.value = await fetchAll('/api-testing/projects/')
 
     // 过滤出HTTP项目
     const httpProjects = projects.value.filter(project => project.project_type !== 'WEBSOCKET')
@@ -510,10 +510,7 @@ const loadTestSuites = async () => {
   if (!selectedProject.value) return
 
   try {
-    const response = await api.get('/api-testing/test-suites/', {
-      params: { project: selectedProject.value }
-    })
-    testSuites.value = response.data.results || response.data
+    testSuites.value = await fetchAll('/api-testing/test-suites/', { project: selectedProject.value })
   } catch (error) {
     ElMessage.error(t('apiTesting.messages.error.loadTestSuites'))
   }
@@ -522,10 +519,7 @@ const loadTestSuites = async () => {
 const loadEnvironments = async () => {
   try {
     // 获取全局环境 + 当前项目环境
-    const response = await api.get('/api-testing/environments/', {
-      // 不传递project参数，让后端返回所有可访问的环境（全局+当前项目）
-    })
-    const allEnvironments = response.data.results || response.data
+    const allEnvironments = await fetchAll('/api-testing/environments/')
 
     // 过滤当前项目相关或全局环境
     environments.value = allEnvironments.filter(env =>
@@ -541,17 +535,31 @@ const loadRequestTree = async () => {
   if (!selectedProject.value) return
 
   try {
-    // 加载集合
-    const collectionsRes = await api.get('/api-testing/collections/', {
-      params: { project: selectedProject.value }
-    })
-    const collections = collectionsRes.data.results || collectionsRes.data
+    // 加载集合（分页拉全量，默认每页 20 条）
+    let collections = []
+    let page = 1
+    while (true) {
+      const collectionsRes = await api.get('/api-testing/collections/', {
+        params: { project: selectedProject.value, page }
+      })
+      const cdata = collectionsRes.data
+      collections = collections.concat(cdata.results || cdata || [])
+      if (!cdata.next) break
+      page += 1
+    }
 
-    // 加载请求，传递project参数
-    const requestsRes = await api.get('/api-testing/requests/', {
-      params: { project: selectedProject.value }
-    })
-    const requests = requestsRes.data.results || requestsRes.data
+    // 加载请求，传递project参数（分页拉全量）
+    let requests = []
+    page = 1
+    while (true) {
+      const requestsRes = await api.get('/api-testing/requests/', {
+        params: { project: selectedProject.value, page }
+      })
+      const rdata = requestsRes.data
+      requests = requests.concat(rdata.results || rdata || [])
+      if (!rdata.next) break
+      page += 1
+    }
 
     // 构建树形结构
     requestTree.value = buildRequestTree(collections, requests)

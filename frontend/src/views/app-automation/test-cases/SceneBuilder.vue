@@ -922,6 +922,7 @@ import {
   getDeviceList,
   getAppProjects
 } from '@/api/app-automation'
+import { fetchAllFn } from '@/utils/pagination'
 
 // Route
 const route = useRoute()
@@ -1140,7 +1141,7 @@ onMounted(async () => {
             loadComponentPalette(), 
             loadCustomComponentPalette(),
             loadImageCategoryOptions(),  // 加载图片分类选项
-            getAppProjects({ page_size: 100 }).then(res => { projectList.value = res.data.results || res.data || [] })
+            fetchAllFn(getAppProjects).then(res => { projectList.value = res || [] })
         ])
 
         const caseId = route.query.case_id

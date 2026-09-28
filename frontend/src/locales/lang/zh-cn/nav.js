@@ -104,6 +104,8 @@ export default {
 
     // MCP
     mcpConsole: 'MCP 控制台',
+    // jenkins
+    jenkinsConsole: 'jenkins 构建记录',
     // 文档中心
     docsCenter: '文档中心'
   }

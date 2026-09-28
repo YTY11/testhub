@@ -318,6 +318,7 @@ import {
   getTestCases,
   getUiUsers
 } from '@/api/ui_automation.js'
+import { fetchAllFn } from '@/utils/pagination'
 
 const { t, locale } = useI18n()
 
@@ -427,8 +428,7 @@ const loadTasks = async () => {
 // 加载项目列表
 const loadProjects = async () => {
   try {
-    const response = await getUiProjects()
-    projects.value = response.data.results
+    projects.value = await fetchAllFn(getUiProjects)
   } catch (error) {
     console.error('Load projects failed:', error)
   }
@@ -437,9 +437,7 @@ const loadProjects = async () => {
 // 加载用户列表
 const loadUsers = async () => {
   try {
-    const response = await getUiUsers()
-    // 处理分页数据结构
-    const usersData = response.data.results || response.data
+    const usersData = await fetchAllFn(getUiUsers)
     users.value = usersData.map(user => ({
       ...user,
       display_name: user.first_name ? `${user.first_name}（${user.email}）` : `${user.username}（${user.email}）`

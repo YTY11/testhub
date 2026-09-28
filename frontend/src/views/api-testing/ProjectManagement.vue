@@ -206,6 +206,7 @@ import { ElMessage, ElMessageBox, ElDescriptions, ElDescriptionsItem } from 'ele
 import { useI18n } from 'vue-i18n'
 import { Plus } from '@element-plus/icons-vue'
 import api from '@/utils/api'
+import { fetchAll } from '@/utils/pagination'
 import dayjs from 'dayjs'
 
 const { t } = useI18n()
@@ -291,8 +292,7 @@ const loadProjects = async () => {
 
 const loadUsers = async () => {
   try {
-    const response = await api.get('/api-testing/users/')
-    users.value = response.data.results || response.data
+    users.value = await fetchAll('/api-testing/users/')
   } catch (error) {
     ElMessage.error(t('apiTesting.messages.error.loadUsers'))
     console.error(error)

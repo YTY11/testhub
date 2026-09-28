@@ -319,6 +319,7 @@ import {
   deletePageObjectElement,
   getElements
 } from '@/api/ui_automation'
+import { fetchAllFn } from '@/utils/pagination'
 
 const { t } = useI18n()
 
@@ -402,8 +403,8 @@ const filteredElements = computed(() => {
 // 方法定义
 const loadProjects = async () => {
   try {
-    const response = await getUiProjects({ page_size: 100 })
-    projects.value = response.data.results || response.data
+    const response = await fetchAllFn(getUiProjects)
+    projects.value = response
   } catch (error) {
     ElMessage.error(t('uiAutomation.pageObject.messages.loadProjectsFailed'))
     console.error('获取项目列表失败:', error)
@@ -417,8 +418,7 @@ const loadPageObjects = async () => {
   }
 
   try {
-    const response = await getPageObjects({ project: projectId.value })
-    pageObjects.value = response.data.results || response.data
+    pageObjects.value = await fetchAllFn(getPageObjects, { project: projectId.value })
   } catch (error) {
     console.error('获取页面对象列表失败:', error)
   }
@@ -431,8 +431,7 @@ const loadAvailableElements = async () => {
   }
 
   try {
-    const response = await getElements({ project: projectId.value })
-    availableElements.value = response.data.results || response.data
+    availableElements.value = await fetchAllFn(getElements, { project: projectId.value })
   } catch (error) {
     console.error('获取可用元素失败:', error)
   }

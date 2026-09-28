@@ -277,6 +277,7 @@ import {
   updateTestCaseOrder,
   runTestSuite
 } from '@/api/ui_automation'
+import { fetchAllFn } from '@/utils/pagination'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -339,8 +340,8 @@ const filteredAvailableTestCases = computed(() => {
 // 加载项目列表
 const loadProjects = async () => {
   try {
-    const response = await getUiProjects({ page_size: 100 })
-    projects.value = response.data.results || response.data
+    const response = await fetchAllFn(getUiProjects)
+    projects.value = response
   } catch (error) {
     console.error('获取项目列表失败:', error)
     ElMessage.error(t('uiAutomation.project.messages.loadFailed'))

@@ -136,6 +136,7 @@ import {
   getPerfProjects, getPerfScenarios, duplicatePerfScenario, deletePerfScenario,
   executePerfScenario, debugPerfScenario, setBaselineFromExecution
 } from '@/api/performance-testing'
+import { fetchAllFn } from '@/utils/pagination'
 import { statusTagType, slaTagType } from './shared'
 import { normalizeExecuteResult, normalizePreflight } from './executeResult.mjs'
 
@@ -172,8 +173,8 @@ function fmt(v) {
 
 async function loadProjects() {
   try {
-    const res = await getPerfProjects({ page_size: 200 })
-    projects.value = res.data.results || res.data || []
+    const res = await fetchAllFn(getPerfProjects)
+    projects.value = res
   } catch (e) { /* ignore */ }
 }
 

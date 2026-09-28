@@ -186,6 +186,7 @@ import {
   getElementGroupTree,
   validateElementLocator
 } from '@/api/ui_automation'
+import { fetchAllFn } from '@/utils/pagination'
 
 // i18n
 const { t } = useI18n()
@@ -214,8 +215,8 @@ const codeEditor = ref(null)
 // 方法定义
 const loadProjects = async () => {
   try {
-    const response = await getUiProjects({ page_size: 100 })
-    projects.value = response.data.results || response.data
+    const response = await fetchAllFn(getUiProjects)
+    projects.value = response
   } catch (error) {
     ElMessage.error(t('uiAutomation.scriptEditor.messages.loadProjectsFailed'))
     console.error('Failed to load projects:', error)

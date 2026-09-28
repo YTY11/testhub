@@ -295,6 +295,7 @@ import {
   validateElementLocator,
   generateElementSuggestions
 } from '@/api/ui_automation'
+import { fetchAllFn } from '@/utils/pagination'
 
 // 国际化
 const { t } = useI18n()
@@ -502,8 +503,7 @@ onMounted(async () => {
 // 加载项目列表
 const loadProjects = async () => {
   try {
-    const response = await getUiProjects()
-    projects.value = response.data?.results || response.data || []
+    projects.value = await fetchAllFn(getUiProjects)
   } catch (error) {
     console.error('获取项目列表失败:', error)
   }
@@ -552,8 +552,7 @@ const debugTree = () => {
 // 加载定位策略
 const loadLocatorStrategies = async () => {
   try {
-    const response = await getLocatorStrategies()
-    locatorStrategies.value = response.data?.results || response.data || []
+    locatorStrategies.value = await fetchAllFn(getLocatorStrategies)
   } catch (error) {
     console.error('获取定位策略失败:', error)
   }

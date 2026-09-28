@@ -89,8 +89,9 @@ LOCAL_APPS = [
     'apps.monitor',  # 监控中心
     'apps.perf_testing.apps.PerfTestingConfig',  # 性能测试
     'apps.mcp.apps.McpConfig',  # MCP Server（外部 Agent 驱动）
+    'apps.jenkins_release',
 ]
-
+JENKINS_REPORT_SECRET = 'your-random-secret-2025'
 if ANALYTICS_ENABLED or REGISTRATION_STATS_ENABLED:
     LOCAL_APPS.append('apps.analytics')
 
@@ -193,7 +194,7 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'DEFAULT_PAGINATION_CLASS': 'apps.core.pagination.StandardPagination',
     'PAGE_SIZE': 20,
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',

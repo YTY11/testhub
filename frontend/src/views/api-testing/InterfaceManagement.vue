@@ -976,6 +976,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'v
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Folder, Document, MagicStick, Search, Close, CopyDocument, Delete } from '@element-plus/icons-vue'
 import api from '@/utils/api'
+import { fetchAll } from '@/utils/pagination'
 import KeyValueEditor from './components/KeyValueEditor.vue'
 import DataFactorySelector from '@/components/DataFactorySelector.vue'
 import { RequestModelParser } from '@/utils/requestModel'
@@ -1111,9 +1112,7 @@ const onProjectChange = async (projectId) => {
 
 const loadProjects = async () => {
   try {
-    const response = await api.get('/api-testing/projects/')
-    // 后端可能返回分页格式 { results: [...] } 或直接返回数组
-    projects.value = response.data.results || response.data || []
+    projects.value = await fetchAll('/api-testing/projects/')
     if (projects.value.length > 0) {
       selectedProject.value = projects.value[0].id
       await loadCollections(selectedProject.value)
@@ -1127,13 +1126,19 @@ const loadProjects = async () => {
 
 const loadCollections = async (projectId) => {
   try {
-    const response = await api.get('/api-testing/collections/', {
-      params: {
-        project: projectId
-      }
-    })
-    // 后端可能返回分页格式 { results: [...] } 或直接返回数组
-    const collectionsData = response.data.results || response.data || []
+    // 集合默认每页 20 条，循环翻页拉取全部，避免集合树只展示第一页
+    let page = 1
+    let collectionsData = []
+    while (true) {
+      const response = await api.get('/api-testing/collections/', {
+        params: { project: projectId, page }
+      })
+      const data = response.data
+      const pageResults = data.results || data || []
+      collectionsData = collectionsData.concat(pageResults)
+      if (!data.next) break
+      page += 1
+    }
 
     // 构建树形结构
     collections.value = buildTree(collectionsData)
@@ -1151,9 +1156,7 @@ const loadEnvironments = async (projectId) => {
   try {
     // 不传递 project 参数，让后端返回所有可访问的环境（全局 + 当前用户项目），
     // 否则 DjangoFilterBackend 的 project 过滤会把 project 为 null 的全局环境过滤掉。
-    const response = await api.get('/api-testing/environments/', {})
-    // 后端可能返回分页格式 { results: [...] } 或直接返回数组
-    const allEnvironments = response.data.results || response.data || []
+    const allEnvironments = await fetchAll('/api-testing/environments/')
     // 过滤出全局环境 + 当前项目的局部环境
     environments.value = allEnvironments.filter(env =>
       env.scope === 'GLOBAL' ||
@@ -1212,8 +1215,17 @@ const loadRequests = async () => {
   if (!selectedProject.value) return
 
   try {
-    const response = await api.get('/api-testing/requests/')
-    const requests = response.data.results || response.data || []
+    // 接口列表默认每页 20 条，循环翻页拉取全部数据，避免左侧树只展示第一页、且无翻页入口
+    let page = 1
+    let requests = []
+    while (true) {
+      const response = await api.get('/api-testing/requests/', { params: { page } })
+      const data = response.data
+      const pageResults = data.results || data || []
+      requests = requests.concat(pageResults)
+      if (!data.next) break
+      page += 1
+    }
 
     // 清空所有集合的子节点（请求）
     collections.value.forEach(collection => {

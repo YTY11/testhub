@@ -523,6 +523,7 @@ import {
   copyTestCase as copyTestCaseApi,
   getLocatorStrategies
 } from '@/api/ui_automation'
+import { fetchAllFn } from '@/utils/pagination'
 import { getVariableFunctions } from '@/api/data-factory'
 
 // 响应式数据
@@ -588,8 +589,8 @@ const parsedExecutionLogs = computed(() => {
 // 方法定义
 const loadProjects = async () => {
   try {
-    const response = await getUiProjects({ page_size: 100 })
-    projects.value = response.data.results || response.data
+    const response = await fetchAllFn(getUiProjects)
+    projects.value = response
   } catch (error) {
     ElMessage.error('获取项目列表失败')
     console.error('获取项目列表失败:', error)
@@ -603,8 +604,7 @@ const loadTestCases = async () => {
   }
 
   try {
-    const response = await getTestCases({ project: projectId.value })
-    testCases.value = response.data.results || response.data
+    testCases.value = await fetchAllFn(getTestCases, { project: projectId.value })
   } catch (error) {
     console.error('获取测试用例失败:', error)
   }
@@ -617,8 +617,7 @@ const loadElements = async () => {
   }
 
   try {
-    const response = await getElements({ project: projectId.value })
-    availableElements.value = response.data.results || response.data
+    availableElements.value = await fetchAllFn(getElements, { project: projectId.value })
   } catch (error) {
     console.error('获取元素列表失败:', error)
   }
