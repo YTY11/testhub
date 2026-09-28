@@ -624,8 +624,8 @@ const handleNavigate = (type) => {
     color: #eb2f96;
   }
   &.jenkins-icon {
-    background: #fffbe6;
-    color: #d48806;
+    background: #f2f4f7;
+  color: #475467;
   }
 
   &.docs-icon {
