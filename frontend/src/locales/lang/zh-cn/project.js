@@ -64,6 +64,12 @@ export default {
     fetchDetailFailed: '获取项目详情失败',
     memberDeleteSuccess: '成员删除成功',
     memberDeleteFailed: '删除成员失败',
+    environmentAddSuccess: '环境添加成功',
+    environmentAddFailed: '添加环境失败',
+    environmentDeleteSuccess: '环境删除成功',
+    environmentDeleteFailed: '删除环境失败',
+    environmentNameRequired: '请输入环境名称',
+    baseUrlRequired: '请输入基础URL',
 
     // 统一项目管理
     unifiedTitle: '项目管理',

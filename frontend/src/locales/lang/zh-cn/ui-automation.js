@@ -1112,7 +1112,7 @@ export default {
     actionSwitchTab: '切换标签页',
     selectElement: '选择元素',
     inputValue: '输入值：',
-    inputPlaceholder: "请输入内容，支持变量如 '{random_phone()}'",
+    inputPlaceholder: "请输入内容，支持变量如 '{'random_phone()'}'",
     switchTabPlaceholder: '输入索引(0,1...)或留空切换到最新',
     insertVariable: '插入动态变量',
     referenceDataFactory: '引用数据工厂',

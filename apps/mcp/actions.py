@@ -18,22 +18,26 @@ logger = logging.getLogger(__name__)
 
 def accessible_projects(user):
     from apps.projects.models import Project
-    return Project.objects.filter(Q(owner=user) | Q(members=user)).distinct()
+    from apps.projects.permissions import project_access_q
+    return Project.objects.filter(project_access_q(user)).distinct()
 
 
 def accessible_api_projects(user):
     from apps.api_testing.models import ApiProject
-    return ApiProject.objects.filter(Q(owner=user) | Q(members=user)).distinct()
+    from apps.projects.permissions import project_access_q
+    return ApiProject.objects.filter(project_access_q(user)).distinct()
 
 
 def accessible_ui_projects(user):
     from apps.ui_automation.models import UiProject
-    return UiProject.objects.filter(Q(owner=user) | Q(members=user)).distinct()
+    from apps.projects.permissions import project_access_q
+    return UiProject.objects.filter(project_access_q(user)).distinct()
 
 
 def accessible_perf_projects(user):
     from apps.perf_testing.models import PerfProject
-    return PerfProject.objects.filter(Q(owner=user) | Q(members=user)).distinct()
+    from apps.projects.permissions import project_access_q
+    return PerfProject.objects.filter(project_access_q(user)).distinct()
 
 
 def args_digest(arguments: dict) -> str:

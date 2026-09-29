@@ -9,9 +9,13 @@ class ProjectSimpleSerializer(serializers.ModelSerializer):
         fields = ('id', 'name')
 
 class ProjectEnvironmentSerializer(serializers.ModelSerializer):
+    base_url = serializers.CharField(required=True, allow_blank=False)
     class Meta:
         model = ProjectEnvironment
         fields = '__all__'
+        extra_kwargs = {
+            'project': {'read_only': True},
+        }
 
 class ProjectMemberSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)

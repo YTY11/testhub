@@ -174,6 +174,10 @@ def sync_project_shadows(project):
             if getattr(shadow, field_name) != value:
                 setattr(shadow, field_name, value)
                 changed_fields.append(field_name)
+        # 负责人变更同步到各模块影子项目，保证模块内界面/权限与统一项目一致。
+        if hasattr(shadow, 'owner') and shadow.owner_id != project.owner_id:
+            shadow.owner_id = project.owner_id
+            changed_fields.append('owner')
 
         if changed_fields:
             shadow.save(update_fields=changed_fields)

@@ -9,6 +9,7 @@ import logging
 
 from .test_case_views import AppPagination
 from ..models import AppProject
+from apps.projects.permissions import project_access_q
 from ..serializers import (
     AppProjectSerializer,
     AppProjectCreateSerializer,
@@ -39,7 +40,7 @@ class AppProjectViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         return AppProject.objects.filter(
-            models.Q(owner=user) | models.Q(members=user)
+            project_access_q(user)
         ).distinct()
 
     def perform_create(self, serializer):

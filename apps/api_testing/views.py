@@ -7,6 +7,7 @@ from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters
 from django.db import models
+from apps.projects.permissions import project_access_q
 from django.utils import timezone
 from django.http import HttpResponse, FileResponse, Http404, HttpResponseNotFound
 from django.views.static import serve
@@ -75,7 +76,7 @@ class ApiCollectionViewSet(viewsets.ModelViewSet):
         user = self.request.user
         return ApiCollection.objects.filter(
             project__in=ApiProject.objects.filter(
-                models.Q(owner=user) | models.Q(members=user)
+                project_access_q(user)
             )
         ).distinct()
 
@@ -125,7 +126,7 @@ class ApiRequestViewSet(viewsets.ModelViewSet):
         user = self.request.user
         # 获取用户有权限的项目
         accessible_projects = ApiProject.objects.filter(
-            models.Q(owner=user) | models.Q(members=user)
+            project_access_q(user)
         )
 
         # 查询两种接口：
@@ -402,7 +403,7 @@ class EnvironmentViewSet(viewsets.ModelViewSet):
             models.Q(
                 scope='LOCAL',
                 project__in=ApiProject.objects.filter(
-                    models.Q(owner=user) | models.Q(members=user)
+                    project_access_q(user)
                 )
             )
         ).distinct().order_by('-created_at')
@@ -474,7 +475,7 @@ class RequestHistoryViewSet(viewsets.ModelViewSet):
         user = self.request.user
         return RequestHistory.objects.filter(
             request__collection__project__in=ApiProject.objects.filter(
-                models.Q(owner=user) | models.Q(members=user)
+                project_access_q(user)
             )
         ).select_related(
             'request', 'environment', 'executed_by',
@@ -510,7 +511,7 @@ class TestSuiteViewSet(viewsets.ModelViewSet):
         user = self.request.user
         return TestSuite.objects.filter(
             project__in=ApiProject.objects.filter(
-                models.Q(owner=user) | models.Q(members=user)
+                project_access_q(user)
             )
         ).distinct()
 
@@ -811,7 +812,7 @@ class TestSuiteRequestViewSet(viewsets.ModelViewSet):
         user = self.request.user
         return TestSuiteRequest.objects.filter(
             test_suite__project__in=ApiProject.objects.filter(
-                models.Q(owner=user) | models.Q(members=user)
+                project_access_q(user)
             )
         ).distinct()
 
@@ -829,7 +830,7 @@ class TestExecutionViewSet(viewsets.ReadOnlyModelViewSet):
         user = self.request.user
         return TestExecution.objects.filter(
             test_suite__project__in=ApiProject.objects.filter(
-                models.Q(owner=user) | models.Q(members=user)
+                project_access_q(user)
             )
         ).distinct()
     
@@ -2110,11 +2111,11 @@ class NotificationLogViewSet(viewsets.ReadOnlyModelViewSet):
         return NotificationLog.objects.filter(
             models.Q(
                 task__test_suite__project__in=ApiProject.objects.filter(
-                    models.Q(owner=user) | models.Q(members=user)
+                    project_access_q(user)
                 )
             ) | models.Q(
                 task__api_request__collection__project__in=ApiProject.objects.filter(
-                    models.Q(owner=user) | models.Q(members=user)
+                    project_access_q(user)
                 )
             ) | models.Q(
                 task__created_by=user
@@ -2143,11 +2144,11 @@ class TaskNotificationSettingViewSet(viewsets.ModelViewSet):
         return TaskNotificationSetting.objects.filter(
             models.Q(
                 task__test_suite__project__in=ApiProject.objects.filter(
-                    models.Q(owner=user) | models.Q(members=user)
+                    project_access_q(user)
                 )
             ) | models.Q(
                 task__api_request__collection__project__in=ApiProject.objects.filter(
-                    models.Q(owner=user) | models.Q(members=user)
+                    project_access_q(user)
                 )
             ) | models.Q(
                 task__created_by=user
@@ -2197,7 +2198,7 @@ class ApiDashboardViewSet(viewsets.ViewSet):
         
         # 获取用户可访问的项目ID列表
         accessible_projects = ApiProject.objects.filter(
-            models.Q(owner=user) | models.Q(members=user)
+            project_access_q(user)
         ).distinct()
         project_ids = accessible_projects.values_list('id', flat=True)
 

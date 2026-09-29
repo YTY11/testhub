@@ -64,6 +64,12 @@ export default {
     fetchDetailFailed: 'Failed to fetch project details',
     memberDeleteSuccess: 'Member deleted successfully',
     memberDeleteFailed: 'Failed to delete member',
+    environmentAddSuccess: 'Environment added successfully',
+    environmentAddFailed: 'Failed to add environment',
+    environmentDeleteSuccess: 'Environment deleted successfully',
+    environmentDeleteFailed: 'Failed to delete environment',
+    environmentNameRequired: 'Please enter environment name',
+    baseUrlRequired: 'Please enter base URL',
 
     // Unified project management
     unifiedTitle: 'Project Management',

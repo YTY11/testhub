@@ -43,6 +43,42 @@ class UserBriefSerializer(serializers.ModelSerializer):
         ]
 
 
+class ModuleShadowField(serializers.Field):
+    """
+    读写模块影子项目的字段（base_url / project_type / default_env 等）。
+
+    - 输出：读取模块历史项目（影子）上对应字段的值。
+    - 输入：原样透传进 validated_data，由 update/create 写回影子项目，
+      从而解决“前端更新 base_url 提示成功但没生效”的问题。
+    """
+
+    def __init__(self, attr, **kwargs):
+        self.attr = attr
+        kwargs.setdefault('required', False)
+        kwargs.setdefault('allow_null', True)
+        super().__init__(**kwargs)
+
+    def bind(self, field_name, parent):
+        super().bind(field_name, parent)
+        # 让 to_representation 能拿到序列化器上下文里的 module
+        context = parent.context if hasattr(parent, 'context') else {}
+        self.module = context.get('module') if isinstance(context, dict) else None
+
+    def get_attribute(self, instance):
+        # 不直接读 instance 上的同名属性，交给 to_representation 从影子读取
+        return instance
+
+    def to_internal_value(self, data):
+        return data
+
+    def to_representation(self, instance):
+        module = getattr(self, 'module', None)
+        if not module:
+            return ''
+        shadow = get_project_shadow(instance, module)
+        return getattr(shadow, self.attr, '')
+
+
 class UnifiedProjectSerializer(serializers.ModelSerializer):
     """
     对外保持各模块原有项目字段。
@@ -64,10 +100,11 @@ class UnifiedProjectSerializer(serializers.ModelSerializer):
     )
 
     can_manage = serializers.SerializerMethodField(read_only=True)
+    owner_id = serializers.IntegerField(write_only=True, required=False)
 
-    project_type = serializers.SerializerMethodField(read_only=True)
-    base_url = serializers.SerializerMethodField(read_only=True)
-    default_env = serializers.SerializerMethodField(read_only=True)
+    project_type = ModuleShadowField('project_type')
+    base_url = ModuleShadowField('base_url')
+    default_env = ModuleShadowField('default_env')
 
     start_date = NullableDateField(
         required=False,
@@ -89,6 +126,7 @@ class UnifiedProjectSerializer(serializers.ModelSerializer):
             'owner',
             'members',
             'member_ids',
+            'owner_id',
             'can_manage',
             'project_type',
             'base_url',
@@ -235,13 +273,20 @@ class UnifiedProjectSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         module = self.get_module()
         member_ids = validated_data.pop('member_ids', [])
+        owner_id = validated_data.pop('owner_id', None)
         extra_data = self._pop_module_extra_data(validated_data)
 
         request = self.context['request']
+        owner = request.user
+        if owner_id and request.user.is_superuser:
+            try:
+                owner = User.objects.get(pk=owner_id)
+            except User.DoesNotExist:
+                owner = request.user
 
         with transaction.atomic():
             project = Project.objects.create(
-                owner=request.user,
+                owner=owner,
                 **validated_data
             )
 
@@ -262,15 +307,21 @@ class UnifiedProjectSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         module = self.get_module()
         member_ids = validated_data.pop('member_ids', None)
+        owner_id = validated_data.pop('owner_id', None)
+        request = self.context.get('request')
+        owner_changed = bool(owner_id and request and request.user.is_superuser)
+        if owner_changed:
+            instance.owner_id = owner_id
         extra_data = self._pop_module_extra_data(validated_data)
 
         with transaction.atomic():
             for field, value in validated_data.items():
                 setattr(instance, field, value)
 
-            instance.save(
-                update_fields=list(validated_data.keys()) or ['updated_at']
-            )
+            save_fields = list(validated_data.keys())
+            if owner_changed:
+                save_fields.append('owner')
+            instance.save(update_fields=save_fields or ['updated_at'])
 
             if member_ids is not None:
                 replace_project_members(instance, member_ids)

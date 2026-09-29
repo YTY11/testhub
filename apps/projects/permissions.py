@@ -5,9 +5,25 @@
 - 可管理（改项目信息、增删改成员、删除项目）：超级管理员 / 负责人 / 管理员(admin)。
 """
 
+from django.db.models import Q
+
 from .models import ProjectMember
 
 MANAGE_ROLES = {'owner', 'admin'}
+
+
+def project_access_q(user):
+    """
+    各模块历史项目视图（UiProject / ApiProject / AppProject 等）的访问过滤条件。
+
+    统一权限下：
+    - 超级管理员可见全部模块项目；
+    - 其余用户可见其负责（owner）或作为成员（members）的项目。
+    返回一个 Q 对象，可直接用于 .filter(...)。
+    """
+    if user.is_superuser:
+        return Q()
+    return Q(owner=user) | Q(members=user)
 
 
 def get_user_role(user, project):

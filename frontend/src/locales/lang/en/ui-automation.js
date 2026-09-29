@@ -1112,7 +1112,7 @@ export default {
     actionSwitchTab: 'Switch Tab',
     selectElement: 'Select Element',
     inputValue: 'Input Value:',
-    inputPlaceholder: "Enter content, supports variables like '{random_phone()}'",
+    inputPlaceholder: "Enter content, supports variables like '{'random_phone()'}'",
     switchTabPlaceholder: 'Enter index (0,1...) or leave empty for latest',
     insertVariable: 'Insert Dynamic Variable',
     referenceDataFactory: 'Reference Data Factory',

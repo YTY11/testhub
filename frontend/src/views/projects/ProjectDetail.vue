@@ -47,7 +47,7 @@
 
         <el-tab-pane :label="$t('project.environments')" name="environments">
           <div class="environments-section">
-            <el-button type="primary" @click="showAddEnvDialog = true">{{ $t('project.addEnvironment') }}</el-button>
+            <el-button type="primary" @click="openAddEnv">{{ $t('project.addEnvironment') }}</el-button>
             <el-table :data="project?.environments || []" style="width: 100%; margin-top: 20px;">
               <el-table-column prop="name" :label="$t('project.environmentName')" />
               <el-table-column prop="base_url" :label="$t('project.baseUrl')" />
@@ -56,6 +56,11 @@
                 <template #default="{ row }">
                   <el-tag v-if="row.is_default" type="success">{{ $t('project.yes') }}</el-tag>
                   <span v-else>{{ $t('project.no') }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column :label="$t('project.actions')" width="100">
+                <template #default="{ row }">
+                  <el-button size="small" type="danger" @click="deleteEnvironment(row)">{{ $t('common.delete') }}</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -86,6 +91,28 @@
         <el-button type="primary" :loading="addingMember" @click="addMember">{{ $t('project.addMember') }}</el-button>
       </template>
     </el-dialog>
+
+    <!-- 添加环境对话框 -->
+    <el-dialog v-model="showAddEnvDialog" :title="$t('project.addEnvironment')" width="480px">
+      <el-form :model="addEnvForm" label-width="90px">
+        <el-form-item :label="$t('project.environmentName')" required>
+          <el-input v-model="addEnvForm.name" :placeholder="$t('project.environmentName')" />
+        </el-form-item>
+        <el-form-item :label="$t('project.baseUrl')" required>
+          <el-input v-model="addEnvForm.base_url" :placeholder="$t('project.baseUrl')" />
+        </el-form-item>
+        <el-form-item :label="$t('project.description')">
+          <el-input v-model="addEnvForm.description" type="textarea" />
+        </el-form-item>
+        <el-form-item :label="$t('project.defaultEnvironment')">
+          <el-switch v-model="addEnvForm.is_default" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showAddEnvDialog = false">{{ $t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="addingEnv" @click="addEnvironment">{{ $t('project.addEnvironment') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -105,9 +132,16 @@ const showAddMemberDialog = ref(false)
 const showAddEnvDialog = ref(false)
 const users = ref([])
 const addingMember = ref(false)
+const addingEnv = ref(false)
 const addForm = reactive({
   user_id: null,
   role: 'tester'
+})
+const addEnvForm = reactive({
+  name: '',
+  base_url: '',
+  description: '',
+  is_default: false
 })
 
 const fetchProject = async () => {
@@ -152,6 +186,43 @@ const addMember = async () => {
     ElMessage.error(error?.response?.data?.error || t('project.addMemberFailed'))
   } finally {
     addingMember.value = false
+  }
+}
+
+const openAddEnv = () => {
+  Object.assign(addEnvForm, { name: '', base_url: '', description: '', is_default: false })
+  showAddEnvDialog.value = true
+}
+
+const addEnvironment = async () => {
+  if (!addEnvForm.name) {
+    ElMessage.warning(t('project.environmentNameRequired'))
+    return
+  }
+  if (!addEnvForm.base_url) {
+    ElMessage.warning(t('project.baseUrlRequired'))
+    return
+  }
+  addingEnv.value = true
+  try {
+    await api.post(`/projects/${route.params.id}/environments/`, { ...addEnvForm })
+    ElMessage.success(t('project.environmentAddSuccess'))
+    showAddEnvDialog.value = false
+    fetchProject()
+  } catch (error) {
+    ElMessage.error(error?.response?.data?.detail || t('project.environmentAddFailed'))
+  } finally {
+    addingEnv.value = false
+  }
+}
+
+const deleteEnvironment = async (env) => {
+  try {
+    await api.delete(`/projects/${route.params.id}/environments/${env.id}/`)
+    ElMessage.success(t('project.environmentDeleteSuccess'))
+    fetchProject()
+  } catch (error) {
+    ElMessage.error(t('project.environmentDeleteFailed'))
   }
 }
 

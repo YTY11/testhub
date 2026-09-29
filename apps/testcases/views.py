@@ -13,6 +13,7 @@ from .serializers import (
     TestCaseImportRecordListSerializer, TestCaseImportRecordDetailSerializer
 )
 from apps.projects.models import Project
+from apps.projects.permissions import project_access_q
 from .services import TestCaseImportTemplateService, TestCaseExcelImportService
 from .tasks import import_testcases_from_excel
 
@@ -30,7 +31,7 @@ class TestCaseImportRecordPagination(pagination.PageNumberPagination):
 
 def get_user_accessible_projects(user):
     return Project.objects.filter(
-        models.Q(owner=user) | models.Q(members=user)
+        project_access_q(user)
     ).distinct()
 
 class TestCaseListCreateView(generics.ListCreateAPIView):

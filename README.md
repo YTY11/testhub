@@ -3,12 +3,6 @@
 <div align="center">
 
 **基于 AI 驱动的全栈测试管理平台**
-
-[![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
-[![Django](https://img.shields.io/badge/Django-4.2-green.svg)](https://www.djangoproject.com/)
-[![Vue](https://img.shields.io/badge/Vue-3.3-brightgreen.svg)](https://vuejs.org/)
-[![License](https://img.shields.io/badge/License-GPL_v3-blue.svg)](LICENSE)
-
 </div>
 
 ## 📖 项目简介

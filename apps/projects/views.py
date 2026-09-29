@@ -5,6 +5,7 @@ from rest_framework.exceptions import PermissionDenied
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters
 from django.db import models
+from django.shortcuts import get_object_or_404
 from .models import Project, ProjectMember, ProjectEnvironment
 from .serializers import ProjectSerializer, ProjectCreateSerializer, ProjectMemberSerializer, ProjectEnvironmentSerializer
 from .permissions import can_view_project, can_manage_project
@@ -190,11 +191,53 @@ def update_project_member_role(request, project_id, member_id):
 class ProjectEnvironmentListCreateView(generics.ListCreateAPIView):
     serializer_class = ProjectEnvironmentSerializer
     permission_classes = [permissions.IsAuthenticated]
-    
+
+    def _get_project(self):
+        project = get_object_or_404(
+            Project, pk=self.kwargs['project_id']
+        )
+        if not can_view_project(self.request.user, project):
+            raise PermissionDenied('无权限访问该项目')
+        return project
+
     def get_queryset(self):
-        project_id = self.kwargs['project_id']
-        return ProjectEnvironment.objects.filter(project_id=project_id)
-    
+        project = self._get_project()
+        return ProjectEnvironment.objects.filter(project_id=project.pk)
+
     def perform_create(self, serializer):
-        project_id = self.kwargs['project_id']
-        serializer.save(project_id=project_id)
+        project = self._get_project()
+        if not can_manage_project(self.request.user, project):
+            raise PermissionDenied('无权限管理该项目环境')
+        serializer.save(project_id=project.pk)
+
+
+class ProjectEnvironmentDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = ProjectEnvironmentSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def _get_project(self):
+        project = get_object_or_404(
+            Project, pk=self.kwargs['project_id']
+        )
+        if not can_view_project(self.request.user, project):
+            raise PermissionDenied('无权限访问该项目')
+        return project
+
+    def get_queryset(self):
+        project = self._get_project()
+        return ProjectEnvironment.objects.filter(
+            project_id=project.pk,
+            pk=self.kwargs['pk']
+        )
+
+    def perform_update(self, serializer):
+        project = self._get_project()
+        if not can_manage_project(self.request.user, project):
+            raise PermissionDenied('无权限管理该项目环境')
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        project = self._get_project()
+        if not can_manage_project(self.request.user, project):
+            raise PermissionDenied('无权限管理该项目环境')
+        instance.delete()

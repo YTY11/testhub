@@ -99,7 +99,7 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item :label="$t('apiTesting.project.owner')" prop="owner">
+        <el-form-item v-if="isSuperuser" :label="$t('apiTesting.project.owner')" prop="owner">
           <el-select v-model="form.owner" :placeholder="$t('apiTesting.project.selectOwner')" filterable>
             <el-option
               v-for="user in users"
@@ -208,8 +208,11 @@ import { Plus } from '@element-plus/icons-vue'
 import api from '@/utils/api'
 import { fetchAll } from '@/utils/pagination'
 import dayjs from 'dayjs'
+import { useUserStore } from '@/stores/user'
 
 const { t } = useI18n()
+const userStore = useUserStore()
+const isSuperuser = computed(() => !!userStore.user?.is_superuser)
 const loading = ref(false)
 const projects = ref([])
 const users = ref([])
@@ -360,6 +363,9 @@ const submitForm = async () => {
   submitting.value = true
   try {
     const data = { ...form }
+    // 负责人仅超管可变更，映射为 owner_id；普通用户不带该字段
+    if (data.owner) data.owner_id = data.owner
+    delete data.owner
     if (data.start_date) {
       data.start_date = dayjs(data.start_date).format('YYYY-MM-DD')
     }

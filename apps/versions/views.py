@@ -7,6 +7,7 @@ from django.db import models
 from .models import Version
 from .serializers import VersionSerializer, VersionCreateSerializer
 from apps.projects.models import Project
+from apps.projects.permissions import project_access_q
 
 # 版本管理视图
 class VersionListCreateView(generics.ListCreateAPIView):
@@ -27,7 +28,7 @@ class VersionListCreateView(generics.ListCreateAPIView):
         # 只显示用户有权限访问的项目的版本
         user = self.request.user
         accessible_projects = Project.objects.filter(
-            models.Q(owner=user) | models.Q(members=user)
+            project_access_q(user)
         ).distinct()
         
         queryset = Version.objects.filter(projects__in=accessible_projects).distinct()
@@ -50,7 +51,7 @@ class VersionListCreateView(generics.ListCreateAPIView):
         
         # 检查项目权限
         accessible_projects = Project.objects.filter(
-            models.Q(owner=user) | models.Q(members=user)
+            project_access_q(user)
         ).distinct()
         
         # 验证用户对所有指定项目都有权限
@@ -71,7 +72,7 @@ class VersionDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_queryset(self):
         user = self.request.user
         accessible_projects = Project.objects.filter(
-            models.Q(owner=user) | models.Q(members=user)
+            project_access_q(user)
         ).distinct()
         return Version.objects.filter(projects__in=accessible_projects).distinct()
 
@@ -83,7 +84,7 @@ def get_project_versions(request, project_id):
     
     # 检查项目权限
     accessible_projects = Project.objects.filter(
-        models.Q(owner=user) | models.Q(members=user)
+        project_access_q(user)
     ).distinct()
     
     if not accessible_projects.filter(id=project_id).exists():

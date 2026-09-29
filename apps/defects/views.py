@@ -18,6 +18,7 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
 from apps.projects.models import Project, ProjectMember
+from apps.projects.permissions import project_access_q
 from apps.users.models import User
 from apps.versions.models import Version
 from .models import Defect, DefectAttachment, DefectComment, DefectTransition
@@ -169,7 +170,7 @@ class DefectViewSet(viewsets.ModelViewSet):
 
     def get_user_accessible_projects(self, user):
         return Project.objects.filter(
-            models.Q(owner=user) | models.Q(members=user)
+            project_access_q(user)
         ).distinct()
 
     def apply_query_filters(self, queryset):
