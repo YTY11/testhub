@@ -284,6 +284,7 @@ import {
 } from '@/api/app-automation'
 import { getDeviceStatusType, getDeviceStatusText, formatDateTime } from '@/utils/app-automation-helpers'
 import { useI18n } from 'vue-i18n'
+import { fetchAllFn } from '@/utils/pagination'
 
 const { t } = useI18n()
 
@@ -325,8 +326,7 @@ const remoteDeviceRules = computed(() => ({
 const getDevices = async () => {
   loading.value = true
   try {
-    const res = await getDeviceList({ page: 1, page_size: 1000 })
-    devices.value = res.data.results || []
+    devices.value = await fetchAllFn(getDeviceList)
     if (devices.value.length === 0) {
       emptyText.value = t('appAutomation.device.emptyText')
     }

@@ -341,11 +341,10 @@ async function loadScenarios() {
 // 只有已完成的执行才有完整 summary，用于候选列表
 async function loadCandidates() {
   try {
-    const params = { page_size: 50, status: 'COMPLETED', ordering: '-created_at' }
+    const params = { status: 'COMPLETED', ordering: '-created_at' }
     if (filters.project) params.project = filters.project
     if (filters.scenario) params.scenario = filters.scenario
-    const res = await getPerfExecutions(params)
-    candidates.value = res.data.results || res.data || []
+    candidates.value = await fetchAllFn(getPerfExecutions, params)
   } catch (e) {
     candidates.value = []
   }

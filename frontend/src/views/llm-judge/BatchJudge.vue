@@ -441,6 +441,7 @@ import {
   uploadBatchFile, downloadBatchTemplate, pauseBatch, resumeBatch,
 } from '@/api/llm-judge'
 import { useI18n } from 'vue-i18n'
+import { fetchAllFn } from '@/utils/pagination'
 
 const { t } = useI18n()
 const submitting = ref(false)
@@ -466,15 +467,13 @@ const fileCases = ref([])
 
 const loadRubrics = async () => {
   try {
-    const res = await getRubricList({ page_size: 100 })
-    rubrics.value = res.data.results || res.data
+    rubrics.value = await fetchAllFn(getRubricList)
   } catch (e) { /* ignore */ }
 }
 
 const loadHistory = async () => {
   try {
-    const res = await getBatchList({ page_size: 20 })
-    batchHistory.value = res.data.results || res.data
+    batchHistory.value = await fetchAllFn(getBatchList)
   } catch (e) { /* ignore */ }
 }
 

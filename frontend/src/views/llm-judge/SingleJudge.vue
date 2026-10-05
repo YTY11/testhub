@@ -169,6 +169,7 @@ import { ElMessage } from 'element-plus'
 import { InfoFilled, CircleCheck } from '@element-plus/icons-vue'
 import { scoreSingle, getRubricList } from '@/api/llm-judge'
 import { useI18n } from 'vue-i18n'
+import { fetchAllFn } from '@/utils/pagination'
 
 const { t } = useI18n()
 const loading = ref(false)
@@ -185,8 +186,7 @@ const form = reactive({
 
 const loadRubrics = async () => {
   try {
-    const res = await getRubricList({ page_size: 100 })
-    rubrics.value = res.data.results || res.data
+    rubrics.value = await fetchAllFn(getRubricList)
   } catch (e) { /* ignore */ }
 }
 
