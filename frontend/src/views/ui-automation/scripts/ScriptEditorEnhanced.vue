@@ -32,7 +32,7 @@
             :data="elementTree"
             :filter-node-method="filterElementNode"
             :props="{ children: 'children', label: 'name' }"
-            node-key="id"
+            node-key="treeNodeKey"
             default-expand-all
             @node-click="handleElementClick"
           >
@@ -241,6 +241,7 @@ const loadElementTree = async () => {
       return groups.map(group => ({
         ...group,
         type: 'page',
+        treeNodeKey: 'page-' + group.id,
         children: group.children ? buildTree(group.children) : []
       }))
     }
@@ -263,7 +264,8 @@ const loadElementTree = async () => {
 
         const elementNodes = pageElements.map(element => ({
           ...element,
-          type: 'element'
+          type: 'element',
+          treeNodeKey: 'element-' + element.id
         }))
 
         // 将元素添加到页面的子节点中

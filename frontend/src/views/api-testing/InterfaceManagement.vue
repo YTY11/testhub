@@ -35,12 +35,13 @@
           </div>
         </div>
 
-        <div class="collection-tree" v-show="!searchKeyword || searchKeyword.trim() === ''">
+        <div class="collection-tree">
           <el-tree
+            v-show="!searchKeyword || searchKeyword.trim() === ''"
             ref="treeRef"
             :data="collections"
             :props="treeProps"
-            node-key="id"
+            node-key="treeKey"
             :expand-on-click-node="false"
             :default-expanded-keys="expandedKeys"
             draggable
@@ -1078,14 +1079,20 @@ const onSearch = async (value) => {
   }
 
   try {
-    const response = await api.get('/api-testing/collections/search', {
-      params: {
-        project: selectedProject.value,
-        keyword: value
-      }
+    const items = await fetchAll('/api-testing/requests/', {
+      project: selectedProject.value,
+      search: value.trim()
     })
-    // 后端可能返回分页格式 { results: [...] } 或直接返回数组
-    filteredCollections.value = response.data.results || response.data || []
+    const lower = value.trim().toLowerCase()
+    filteredCollections.value = items.map(item => {
+      const name = (item.name || '').toLowerCase()
+      const url = (item.url || '').toLowerCase()
+      const method = (item.method || '').toLowerCase()
+      let matchType = 'url'
+      if (name.includes(lower)) matchType = 'name'
+      else if (method.includes(lower)) matchType = 'method'
+      return { ...item, matchType }
+    })
   } catch (error) {
     ElMessage.error('搜索失败')
     console.error('搜索失败:', error)
@@ -1126,6 +1133,7 @@ const loadProjects = async () => {
 
 const loadCollections = async (projectId) => {
   try {
+    expandedKeys.value = []
     // 集合默认每页 20 条，循环翻页拉取全部，避免集合树只展示第一页
     let page = 1
     let collectionsData = []
@@ -1176,6 +1184,7 @@ const buildTree = (items) => {
     map[item.id] = {
       ...item,
       type: 'collection',
+      treeKey: 'c-' + item.id,
       children: []
     }
   })
@@ -1195,7 +1204,7 @@ const buildTree = (items) => {
 
 const findCollectionById = (collections, id) => {
   for (const collection of collections) {
-    if (collection.id === id) return collection
+    if (collection.type === 'collection' && collection.id === id) return collection
     if (collection.children) {
       const found = findCollectionById(collection.children, id)
       if (found) return found
@@ -1245,6 +1254,7 @@ const loadRequests = async () => {
           collection.children.push({
             ...request,
             type: 'request',
+            treeKey: 'r-' + request.id,
             name: request.name
           })
         }
@@ -1253,6 +1263,7 @@ const loadRequests = async () => {
         collections.value.push({
           ...request,
           type: 'request',
+          treeKey: 'r-' + request.id,
           name: request.name
         })
       }
@@ -1364,11 +1375,11 @@ const onNodeRightClick = (event, node, treeNode) => {
 }
 
 const onNodeExpand = (node) => {
-  expandedKeys.value.push(node.id)
+  expandedKeys.value.push(node.treeKey)
 }
 
 const onNodeCollapse = (node) => {
-  expandedKeys.value = expandedKeys.value.filter(key => key !== node.id)
+  expandedKeys.value = expandedKeys.value.filter(key => key !== node.treeKey)
 }
 
 const createEmptyRequest = () => {
@@ -2796,7 +2807,7 @@ const useLocalVariableCategories = () => {
   width: 300px;
   border-right: 1px solid #e4e7ed;
   background: #ffffff;
-  overflow: visible;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   box-shadow: 2px 0 6px rgba(0, 0, 0, 0.05);
@@ -2968,15 +2979,10 @@ const useLocalVariableCategories = () => {
 
 /* 搜索结果 */
 .search-results {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
   background: white;
   border: 1px solid #e4e7ed;
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-  z-index: 1000;
   max-height: 400px;
   overflow: auto;
   margin-top: 8px;

@@ -28,7 +28,7 @@
             :key="treeKey"
             :data="treeData"
             :props="treeProps"
-            node-key="id"
+            node-key="treeNodeKey"
             :expand-on-click-node="false"
             :default-expanded-keys="expandedKeys"
             @node-click="onNodeClick"
@@ -581,6 +581,7 @@ const loadPageTree = async () => {
       return groups.map(group => ({
         ...group,
         type: 'page',
+        treeNodeKey: 'page-' + group.id,
         children: group.children ? buildTree(group.children) : []
       }))
     }
@@ -611,6 +612,7 @@ const loadElementTree = async () => {
       return groups.map(group => ({
         ...group,
         type: 'page',
+        treeNodeKey: 'page-' + group.id,
         children: group.children ? buildTree(group.children) : []
       }))
     }
@@ -645,7 +647,8 @@ const loadElementTree = async () => {
           attachedElementIds.add(element.id)
           return {
             ...element,
-            type: 'element'
+            type: 'element',
+            treeNodeKey: 'element-' + element.id
           }
         })
 
@@ -681,9 +684,11 @@ const loadElementTree = async () => {
         id: 'unassigned',
         name: '未关联页面',
         type: 'page',
+        treeNodeKey: 'unassigned',
         children: unassignedElements.map(element => ({
           ...element,
-          type: 'element'
+          type: 'element',
+          treeNodeKey: 'element-' + element.id
         }))
       }
       pageNodes.unshift(unassignedPage) // 添加到列表最前面
@@ -881,14 +886,14 @@ const onNodeRightClick = (event, data) => {
 
 // 节点展开
 const onNodeExpand = (data) => {
-  if (!expandedKeys.value.includes(data.id)) {
-    expandedKeys.value.push(data.id)
+  if (!expandedKeys.value.includes(data.treeNodeKey)) {
+    expandedKeys.value.push(data.treeNodeKey)
   }
 }
 
 // 节点收起
 const onNodeCollapse = (data) => {
-  const index = expandedKeys.value.indexOf(data.id)
+  const index = expandedKeys.value.indexOf(data.treeNodeKey)
   if (index > -1) {
     expandedKeys.value.splice(index, 1)
   }
@@ -1055,8 +1060,8 @@ const saveElement = async () => {
       // 展开新创建元素所在的页面节点
       if (selectedElement.value && selectedElement.value.group_id) {
         console.log('展开元素所在页面:', selectedElement.value.group_id)
-        if (!expandedKeys.value.includes(selectedElement.value.group_id)) {
-          expandedKeys.value.push(selectedElement.value.group_id)
+        if (!expandedKeys.value.includes('page-' + selectedElement.value.group_id)) {
+          expandedKeys.value.push('page-' + selectedElement.value.group_id)
         }
       }
 
