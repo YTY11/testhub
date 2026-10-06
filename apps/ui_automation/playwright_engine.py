@@ -93,7 +93,7 @@ class PlaywrightTestEngine:
         try:
             playwright = sync_playwright().start()
             browser_launcher = getattr(playwright, normalized_browser)
-            browser = browser_launcher.launch(headless=True)
+            browser = browser_launcher.launch(headless=True, args=['--no-sandbox', '--disable-dev-shm-usage'])
             return True, None
         except Exception as e:
             logger.error(f"同步检查 Playwright 执行环境失败: {str(e)}")
@@ -116,7 +116,7 @@ class PlaywrightTestEngine:
         try:
             playwright = await async_playwright().start()
             browser_launcher = getattr(playwright, normalized_browser)
-            browser = await browser_launcher.launch(headless=True)
+            browser = await browser_launcher.launch(headless=True, args=['--no-sandbox', '--disable-dev-shm-usage'])
             return True, None
         except Exception as e:
             logger.error(f"异步检查 Playwright 执行环境失败: {str(e)}")
@@ -153,6 +153,8 @@ class PlaywrightTestEngine:
                     '--ignore-certificate-errors',  # 忽略证书错误
                     '--allow-insecure-localhost',  # 允许不安全localhost
                     '--disable-web-security',  # 禁用web安全限制（跨域）
+                    '--no-sandbox',  # root 容器内必须禁用沙箱
+                    '--disable-dev-shm-usage',  # 容器 /dev/shm 过小时避免崩溃
                 ]
             )
 

@@ -32,7 +32,7 @@ from .serializers import (
     TestScriptSerializer, TestScriptCreateSerializer, TestScriptUpdateSerializer,
     TestSuiteSerializer, TestSuiteCreateSerializer, TestSuiteUpdateSerializer, TestSuiteWithScriptsSerializer,
     TestSuiteScriptSerializer, TestSuiteTestCaseSerializer,
-    TestExecutionSerializer, TestExecutionCreateSerializer,
+    TestExecutionSerializer, TestExecutionCreateSerializer, TestExecutionListSerializer,
     ScreenshotSerializer,
     ElementGroupSerializer, ElementGroupCreateSerializer,
     PageObjectSerializer, PageObjectCreateSerializer, PageObjectElementSerializer,
@@ -874,6 +874,8 @@ class TestExecutionViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action == 'create':
             return TestExecutionCreateSerializer
+        if self.action == 'list':
+            return TestExecutionListSerializer
         return TestExecutionSerializer
 
     def perform_destroy(self, instance):

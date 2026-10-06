@@ -215,6 +215,21 @@ class TestExecutionSerializer(serializers.ModelSerializer):
         return data
 
 
+class TestExecutionListSerializer(serializers.ModelSerializer):
+    """执行记录列表精简序列化器（不含 results 大字段，用于列表接口提速）"""
+    executed_by = UserSerializer(read_only=True)
+    test_suite_name = serializers.CharField(source='test_suite.name', read_only=True)
+    project_name = serializers.CharField(source='test_suite.project.name', read_only=True)
+
+    class Meta:
+        model = TestExecution
+        fields = [
+            'id', 'status', 'start_time', 'end_time',
+            'total_requests', 'passed_requests', 'failed_requests',
+            'executed_by', 'created_at', 'test_suite_name', 'project_name'
+        ]
+
+
 class ScheduledTaskSerializer(serializers.ModelSerializer):
     """定时任务序列化器"""
     created_by = UserSerializer(read_only=True)

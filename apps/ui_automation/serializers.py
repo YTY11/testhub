@@ -256,6 +256,35 @@ class TestExecutionSerializer(serializers.ModelSerializer):
         return obj.pass_rate
 
 
+class TestExecutionListSerializer(serializers.ModelSerializer):
+    """执行记录列表精简序列化器（不含 result_data 大字段，用于列表接口提速）"""
+    executed_by = UserSerializer(read_only=True)
+    project_name = serializers.CharField(source='project.name', read_only=True, default='')
+    test_suite_name = serializers.SerializerMethodField()
+    executed_by_name = serializers.SerializerMethodField()
+    pass_rate = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TestExecution
+        fields = [
+            'id', 'project', 'project_name', 'test_suite', 'test_script',
+            'environment', 'status', 'total_cases', 'passed_cases',
+            'failed_cases', 'skipped_cases', 'engine', 'browser', 'headless',
+            'duration', 'error_message', 'report_url', 'created_at',
+            'started_at', 'finished_at', 'executed_by',
+            'test_suite_name', 'executed_by_name', 'pass_rate'
+        ]
+
+    def get_test_suite_name(self, obj):
+        return obj.test_suite.name if obj.test_suite else '-'
+
+    def get_executed_by_name(self, obj):
+        return obj.executed_by.username if obj.executed_by else '-'
+
+    def get_pass_rate(self, obj):
+        return obj.pass_rate
+
+
 class TestExecutionCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = TestExecution

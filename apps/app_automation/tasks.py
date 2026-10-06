@@ -134,7 +134,13 @@ def _send_app_email_notification(task, detail_content, status_text):
     """发送邮件通知"""
     from .models import AppNotificationLog
 
-    recipients = task.notify_emails if isinstance(task.notify_emails, list) else []
+    notify_emails = task.notify_emails
+    if isinstance(notify_emails, list):
+        recipients = notify_emails
+    elif notify_emails:
+        recipients = [notify_emails]
+    else:
+        recipients = []
     if not recipients:
         return
 

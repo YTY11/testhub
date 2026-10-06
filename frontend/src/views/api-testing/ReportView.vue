@@ -38,7 +38,7 @@
         </el-table-column>
         <el-table-column :label="$t('apiTesting.common.operation')" width="150">
           <template #default="scope">
-            <el-button link type="primary" @click="viewReportDetail(scope.row)">{{ $t('apiTesting.report.generateAndViewReport') }}</el-button>
+            <el-button link type="primary" :loading="generatingId === scope.row.id" :disabled="generatingId !== null" @click="viewReportDetail(scope.row)">{{ $t('apiTesting.report.generateAndViewReport') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -56,6 +56,7 @@ import dayjs from 'dayjs'
 const { t } = useI18n()
 const reports = ref([])
 const loading = ref(false)
+const generatingId = ref(null)
 
 const loadReports = async () => {
   loading.value = true
@@ -74,6 +75,8 @@ const refreshReports = async () => {
 }
 
 const generateAndOpenAllureReport = async (executionId) => {
+  if (generatingId.value !== null) return
+  generatingId.value = executionId
   try {
     // 调用API生成Allure报告数据
     const response = await api.post(`/api-testing/test-executions/${executionId}/generate-allure-report/`)
@@ -84,6 +87,8 @@ const generateAndOpenAllureReport = async (executionId) => {
     window.open(fullUrl, '_blank')
   } catch (error) {
     ElMessage.error(t('apiTesting.messages.error.reportGenerateFailed'))
+  } finally {
+    generatingId.value = null
   }
 }
 

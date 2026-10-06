@@ -98,6 +98,7 @@
       :title="$t('uiAutomation.report.reportDetail')"
       width="80%"
       :close-on-click-modal="false"
+      v-loading="detailLoading"
     >
       <div v-if="currentReport" class="report-detail">
         <el-descriptions :column="2" border>
@@ -298,6 +299,7 @@ import { Refresh, Document, Delete, WarningFilled } from '@element-plus/icons-vu
 import {
   getUiProjects,
   getTestExecutions,
+  getTestExecutionDetail,
   deleteTestExecution
 } from '@/api/ui_automation'
 import { fetchAllFn } from '@/utils/pagination'
@@ -317,6 +319,7 @@ const pagination = reactive({
 // 详情对话框
 const showDetailDialog = ref(false)
 const currentReport = ref(null)
+const detailLoading = ref(false)
 
 // 用例详情对话框
 const showCaseDetailDialog = ref(false)
@@ -387,9 +390,18 @@ const handleCurrentChange = async () => {
 }
 
 // 查看报告详情
-const viewReportDetail = (report) => {
-  currentReport.value = report
+const viewReportDetail = async (report) => {
   showDetailDialog.value = true
+  detailLoading.value = true
+  try {
+    // 列表接口已不含 result_data，详情单独拉取完整数据
+    const res = await getTestExecutionDetail(report.id)
+    currentReport.value = res.data
+  } catch (error) {
+    ElMessage.error(t('uiAutomation.report.messages.loadFailed'))
+  } finally {
+    detailLoading.value = false
+  }
 }
 
 // 获取用例执行列表

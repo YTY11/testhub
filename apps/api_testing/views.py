@@ -36,7 +36,8 @@ from .serializers import (
     ScheduledTaskSerializer, TaskExecutionLogSerializer,
     NotificationLogSerializer, TaskNotificationSettingSerializer,
     NotificationLogDetailSerializer,
-    TaskNotificationSettingDetailSerializer, OperationLogSerializer
+    TaskNotificationSettingDetailSerializer, OperationLogSerializer,
+    TestExecutionListSerializer
 )
 
 logger = logging.getLogger(__name__)
@@ -826,12 +827,20 @@ class TestExecutionViewSet(viewsets.ReadOnlyModelViewSet):
     ordering = ['-created_at']
     pagination_class = StandardPagination
     
+    def get_serializer_class(self):
+        # 列表接口使用精简序列化器（不含 results 大字段），详情接口使用完整序列化器
+        if self.action == 'list':
+            return TestExecutionListSerializer
+        return TestExecutionSerializer
+
     def get_queryset(self):
         user = self.request.user
         return TestExecution.objects.filter(
             test_suite__project__in=ApiProject.objects.filter(
                 project_access_q(user)
             )
+        ).select_related(
+            'test_suite', 'test_suite__project', 'executed_by'
         ).distinct()
     
     @action(detail=True, methods=['post'], url_path='generate-allure-report')
@@ -1351,18 +1360,26 @@ class TestExecutionViewSet(viewsets.ReadOnlyModelViewSet):
                     ],
                     "steps": [
                         {
-                            "name": "发送请求",
+                            "name": "请求 {0} {1}".format(result.get('method', 'GET'), result.get('url', '')),
                             "status": "passed",
                             "stage": "finished",
-                            "start": int(time.time() * 1000) - 1000,
-                            "stop": int(time.time() * 1000) - 500,
+                            "start": int(time.time() * 1000) - 2500,
+                            "stop": int(time.time() * 1000) - 1500,
                             "steps": []
                         },
                         {
-                            "name": "验证响应",
+                            "name": "响应 状态码 {0}，耗时 {1}ms".format(result.get('status_code', '-'), result.get('response_time', '-')),
                             "status": "passed" if result.get('passed', False) else "failed",
                             "stage": "finished",
-                            "start": int(time.time() * 1000) - 500,
+                            "start": int(time.time() * 1000) - 1500,
+                            "stop": int(time.time() * 1000) - 800,
+                            "steps": []
+                        },
+                        {
+                            "name": "断言结果: {0}".format(json.dumps(result.get('assertions_results', []), ensure_ascii=False)[:600] if result.get('assertions_results') else '无断言'),
+                            "status": "passed" if result.get('passed', False) else "failed",
+                            "stage": "finished",
+                            "start": int(time.time() * 1000) - 800,
                             "stop": int(time.time() * 1000),
                             "steps": []
                         }
@@ -1706,8 +1723,9 @@ class ScheduledTaskViewSet(viewsets.ModelViewSet):
             has_config = notification_config is not None
             has_custom_bots = bool(notification_setting.custom_webhook_bots)
             has_custom_recipients = notification_setting.custom_recipients.exists()
+            has_notify_emails = bool(getattr(task, 'notify_emails', None))
             
-            if not (has_config or has_custom_bots or has_custom_recipients):
+            if not (has_config or has_custom_bots or has_custom_recipients or has_notify_emails):
                 logger.warning("没有找到通知配置且无自定义设置")
                 return
 
@@ -1741,7 +1759,9 @@ class ScheduledTaskViewSet(viewsets.ModelViewSet):
             logger.info("=== 开始发送邮件通知 ===")
 
             # 准备邮件内容
-            subject = f"定时任务执行{'成功' if success else '失败'}: {task.name}"
+            status_label = '成功' if success else '失败'
+            status_color = '#16a34a' if success else '#dc2626'
+            subject = f"定时任务执行{status_label}: {task.name}"
 
             # 过滤掉详细的测试结果数据，只保留概要信息
             summary_info = '无详细信息'
@@ -1794,12 +1814,49 @@ class ScheduledTaskViewSet(viewsets.ModelViewSet):
                 logger.warning("没有找到任何邮件收件人")
                 return
 
+            # 构建美观的 HTML 邮件正文
+            error_info = execution_log.error_message if execution_log.error_message else '无错误信息'
+            _sf = summary_fields if 'summary_fields' in locals() else {}
+            html_message = f"""
+<html>
+  <body style="margin:0;padding:0;background:#f3f4f6;font-family:'Microsoft YaHei',Arial,sans-serif;">
+    <div style="max-width:620px;margin:24px auto;background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
+      <div style="background:{status_color};padding:20px 24px;color:#fff;">
+        <h2 style="margin:0;font-size:18px;">定时任务执行{status_label}</h2>
+        <div style="opacity:0.9;font-size:13px;margin-top:4px;">{task.name}</div>
+      </div>
+      <div style="padding:20px 24px;">
+        <table style="width:100%;border-collapse:collapse;font-size:14px;color:#374151;">
+          <tr><td style="padding:8px 0;color:#6b7280;width:120px;">执行时间</td><td style="padding:8px 0;font-weight:600;">{execution_log.created_at.strftime('%Y-%m-%d %H:%M:%S')}</td></tr>
+          <tr><td style="padding:8px 0;color:#6b7280;">任务类型</td><td style="padding:8px 0;font-weight:600;">{'测试套件执行' if task.task_type == 'TEST_SUITE' else 'API请求执行'}</td></tr>
+          <tr><td style="padding:8px 0;color:#6b7280;">执行状态</td><td style="padding:8px 0;"><span style="background:{status_color};color:#fff;padding:2px 12px;border-radius:10px;font-size:12px;">{status_label}</span></td></tr>
+        </table>
+        <div style="margin-top:16px;border-top:1px solid #e5e7eb;padding-top:12px;">
+          <div style="font-size:14px;font-weight:600;color:#111827;margin-bottom:8px;">执行概要</div>
+          <table style="width:100%;border-collapse:collapse;font-size:14px;color:#374151;">
+            <tr><td style="padding:6px 0;color:#6b7280;width:120px;">通过用例</td><td style="padding:6px 0;color:#16a34a;font-weight:700;">{_sf.get('passed_count', '-')}</td></tr>
+            <tr><td style="padding:6px 0;color:#6b7280;">失败用例</td><td style="padding:6px 0;color:#dc2626;font-weight:700;">{_sf.get('failed_count', '-')}</td></tr>
+            <tr><td style="padding:6px 0;color:#6b7280;">用例总数</td><td style="padding:6px 0;font-weight:700;">{_sf.get('total_count', '-')}</td></tr>
+          </table>
+        </div>
+        <div style="margin-top:16px;border-top:1px solid #e5e7eb;padding-top:12px;">
+          <div style="font-size:14px;font-weight:600;color:#111827;margin-bottom:8px;">错误信息</div>
+          <div style="font-size:13px;color:#dc2626;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:10px;word-break:break-all;">{error_info}</div>
+        </div>
+      </div>
+      <div style="background:#f9fafb;padding:14px 24px;font-size:12px;color:#9ca3af;text-align:center;">本邮件由 TestHub 定时任务自动发送</div>
+    </div>
+  </body>
+</html>
+            """
+
             # 发送邮件
             from_email = settings.DEFAULT_FROM_EMAIL
             logger.info(f"准备发送邮件，发件人: {from_email}, 收件人: {recipients}")
             send_mail(
                 subject=subject,
                 message=message,
+                html_message=html_message,
                 from_email=from_email,
                 recipient_list=recipients,
                 fail_silently=False,
