@@ -258,10 +258,22 @@
               </div>
             </el-tab-pane>
 
+            <!-- 执行截图 Tab（手动步骤截图） -->
+            <el-tab-pane :label="'执行截图'" name="screenshots">
+              <div v-if="caseManualScreenshots.length > 0" class="screenshot-container">
+                <div v-for="(screenshot, index) in caseManualScreenshots" :key="'m' + index" class="screenshot-item">
+                  <h5>{{ screenshot.description || `${$t('uiAutomation.report.screenshot')} ${index + 1}` }}</h5>
+                  <img :src="screenshot.url" :alt="screenshot.description" class="screenshot-img" />
+                  <p class="screenshot-time">{{ screenshot.timestamp }}</p>
+                </div>
+              </div>
+              <el-empty v-else :description="$t('uiAutomation.report.noScreenshots')" />
+            </el-tab-pane>
+
             <!-- 失败截图 Tab -->
-            <el-tab-pane :label="$t('uiAutomation.report.failedScreenshots')" name="screenshots">
-              <div v-if="currentCase.screenshots && currentCase.screenshots.length > 0" class="screenshot-container">
-                <div v-for="(screenshot, index) in currentCase.screenshots" :key="index" class="screenshot-item">
+            <el-tab-pane :label="$t('uiAutomation.report.failedScreenshots')" name="failedScreenshots">
+              <div v-if="caseFailedScreenshots.length > 0" class="screenshot-container">
+                <div v-for="(screenshot, index) in caseFailedScreenshots" :key="'f' + index" class="screenshot-item">
                   <h5>{{ screenshot.description || `${$t('uiAutomation.report.screenshot')} ${index + 1}` }}</h5>
                   <img :src="screenshot.url" :alt="screenshot.description" class="screenshot-img" />
                   <p class="screenshot-time">{{ screenshot.timestamp }}</p>
@@ -292,7 +304,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Document, Delete, WarningFilled } from '@element-plus/icons-vue'
@@ -325,6 +337,14 @@ const detailLoading = ref(false)
 const showCaseDetailDialog = ref(false)
 const currentCase = ref(null)
 const activeTab = ref('logs')
+
+// 截图分类：manual=手动步骤截图, failure=失败/异常截图
+const isFailureScreenshot = (s) => {
+  const d = s.description || ''
+  return s.type === 'failure' || /失败截图|异常截图|截图失败/.test(d)
+}
+const caseManualScreenshots = computed(() => (currentCase.value?.screenshots || []).filter(s => !isFailureScreenshot(s)))
+const caseFailedScreenshots = computed(() => (currentCase.value?.screenshots || []).filter(s => isFailureScreenshot(s)))
 
 // 加载项目列表
 const loadProjects = async () => {

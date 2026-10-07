@@ -33,6 +33,7 @@ class SeleniumTestEngine:
         """
         self.browser_type = browser_type
         self.headless = headless
+        self.base_url = None
         self.driver = None
 
     @staticmethod
@@ -387,6 +388,21 @@ class SeleniumTestEngine:
         elif locator_strategy.lower() == 'id' and not locator_value.startswith('#'):
             # ID定位直接使用值
             return by_type, locator_value
+
+        elif locator_strategy.lower() == 'placeholder':
+            return By.CSS_SELECTOR, f'[placeholder="{locator_value}"]'
+
+        elif locator_strategy.lower() == 'role':
+            return By.CSS_SELECTOR, f'[role="{locator_value}"]'
+
+        elif locator_strategy.lower() == 'label':
+            return By.CSS_SELECTOR, f'[aria-label="{locator_value}"]'
+
+        elif locator_strategy.lower() == 'title':
+            return By.CSS_SELECTOR, f'[title="{locator_value}"]'
+
+        elif locator_strategy.lower() == 'test-id':
+            return By.CSS_SELECTOR, f'[data-testid="{locator_value}"]'
             
         elif locator_strategy.lower() == 'css' and locator_value.startswith('#'):
             # CSS选择器
@@ -399,6 +415,33 @@ class SeleniumTestEngine:
             return By.XPATH, locator_value
 
         return by_type, locator_value
+
+    def _selenium_wait_element(self, by_type, by_value, timeout, condition='presence'):
+        """Selenium 定位元素：主 frame 找不到时遍历 iframe WebElement 兜底"""
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        wait = WebDriverWait(self.driver, timeout)
+        ec = {
+            'presence': EC.presence_of_element_located,
+            'visibility': EC.visibility_of_element_located,
+            'clickable': EC.element_to_be_clickable,
+        }.get(condition, EC.presence_of_element_located)
+        try:
+            return wait.until(ec((by_type, by_value)))
+        except Exception:
+            pass
+        # 遍历 iframe WebElement
+        try:
+            for frame in self.driver.find_elements(By.TAG_NAME, 'iframe'):
+                try:
+                    el = frame.find_element(by_type, by_value)
+                    if el:
+                        return el
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return wait.until(ec((by_type, by_value)))
 
     def execute_step(self, step, element_data: Dict) -> Tuple[bool, str, Optional[str]]:
         """
@@ -427,6 +470,26 @@ class SeleniumTestEngine:
         screenshot_base64 = None
 
         try:
+            # openUrl：打开指定URL，相对路径自动拼接项目 base_url（登录后跳转其它页面）
+            if action_type == 'openUrl':
+                raw = (resolved_input_value or '').strip()
+                if raw.startswith('http://') or raw.startswith('https://'):
+                    target_url = raw
+                elif self.base_url:
+                    target_url = self.base_url.rstrip('/') + ('/' + raw.lstrip('/') if raw else '')
+                else:
+                    target_url = raw
+                try:
+                    self.driver.get(target_url)
+                    time.sleep(2)
+                    execution_time = round(time.time() - start_time, 2)
+                    log = f"✓ 成功打开URL: {target_url} - 耗时 {execution_time}秒"
+                    return True, log, None
+                except Exception as e:
+                    execution_time = round(time.time() - start_time, 2)
+                    log = f"✗ 打开URL失败: {target_url}\n  - 错误: {str(e)}"
+                    return False, log, None
+
             # wait和screenshot操作不需要元素定位器
             if action_type == 'wait':
                 wait_seconds = step.wait_time / 1000 if step.wait_time else 1
@@ -544,10 +607,10 @@ class SeleniumTestEngine:
                     
                     element = wait.until(find_visible_element)
                 else:
-                    element = wait.until(EC.element_to_be_clickable((by_type, by_value)))
+                    element = self._selenium_wait_element(by_type, by_value, timeout_seconds, 'clickable')
             else:
                 # 其他操作：等待元素出现
-                element = wait.until(EC.presence_of_element_located((by_type, by_value)))
+                element = self._selenium_wait_element(by_type, by_value, timeout_seconds, 'presence')
 
             # 执行操作（添加 stale element 重试机制）
             execution_time = 0
@@ -599,7 +662,7 @@ class SeleniumTestEngine:
                                     return False
                                 element = wait.until(find_visible_element)
                             else:
-                                element = wait.until(EC.element_to_be_clickable((by_type, by_value)))
+                                element = self._selenium_wait_element(by_type, by_value, timeout_seconds, 'clickable')
 
                             # 等待元素状态稳定（确保 DOM 不再变化）
                             time.sleep(0.3)
@@ -622,9 +685,9 @@ class SeleniumTestEngine:
                                 if attempt < max_retries - 1:
                                     time.sleep(0.5)
                                     if 'dropdown' in by_value.lower() or 'el-select' in by_value.lower():
-                                        element = wait.until(EC.visibility_of_element_located((by_type, by_value)))
+                                        element = self._selenium_wait_element(by_type, by_value, timeout_seconds, 'visibility')
                                     else:
-                                        element = wait.until(EC.element_to_be_clickable((by_type, by_value)))
+                                        element = self._selenium_wait_element(by_type, by_value, timeout_seconds, 'clickable')
                                 else:
                                     raise
                         else:
@@ -677,7 +740,7 @@ class SeleniumTestEngine:
                             wait_time = 1.0 if attempt == 0 else 1.5
                             logger.info(f"等待 {wait_time}秒 让页面稳定...")
                             time.sleep(wait_time)
-                            element = wait.until(EC.presence_of_element_located((by_type, by_value)))
+                            element = self._selenium_wait_element(by_type, by_value, timeout_seconds, 'presence')
                             time.sleep(0.3)  # 确保元素状态稳定
                             logger.info(f"✓ 元素重新定位成功")
                         else:
@@ -703,7 +766,7 @@ class SeleniumTestEngine:
                             wait_time = 1.0 if attempt == 0 else 1.5
                             logger.info(f"等待 {wait_time}秒 让页面稳定...")
                             time.sleep(wait_time)
-                            element = wait.until(EC.presence_of_element_located((by_type, by_value)))
+                            element = self._selenium_wait_element(by_type, by_value, timeout_seconds, 'presence')
                             time.sleep(0.3)  # 确保元素状态稳定
                             logger.info(f"✓ 元素重新定位成功")
                         else:
@@ -711,7 +774,7 @@ class SeleniumTestEngine:
 
             elif action_type == 'waitFor':
                 # 等待元素可见
-                wait.until(EC.visibility_of_element_located((by_type, by_value)))
+                self._selenium_wait_element(by_type, by_value, timeout_seconds, 'visibility')
                 execution_time = round(time.time() - start_time, 2)
                 log = f"✓ 等待元素 '{element_name}' 出现成功\n"
                 log += f"  - 定位器: {locator_strategy}={locator_value}\n"

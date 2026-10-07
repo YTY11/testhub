@@ -1725,6 +1725,14 @@ class BaseBrowserAgent:
                 do_stop = await should_stop() if asyncio.iscoroutinefunction(should_stop) else should_stop()
                 if do_stop: raise KeyboardInterrupt("User requested stop")
 
+            # 新增：所有子任务均已进入终态时提前结束，避免 LLM 反复标记已完成任务导致死循环
+            if planned_tasks and all(
+                t.get('status') in ('completed', 'failed', 'skipped', 'error')
+                for t in planned_tasks
+            ):
+                logger.info("✅ 所有子任务均已完结，提前结束 AI 执行。")
+                raise KeyboardInterrupt("All tasks terminal - done")
+
             if _task_was_done:
                 raise KeyboardInterrupt("Done")
 

@@ -61,6 +61,12 @@ class TestExecutor:
         self.execution.duration = duration
         self.execution.finished_at = timezone.now()
         self.execution.error_message = error_msg
+        # 为每个用例的截图条目补充类型标记（manual=手动步骤截图, failure=失败/异常截图）
+        for _case in self.results:
+            for _shot in _case.get('screenshots', []):
+                if 'type' not in _shot:
+                    _d = (_shot.get('description') or '')
+                    _shot['type'] = 'failure' if ('失败截图' in _d or '异常截图' in _d or '截图失败' in _d) else 'manual'
         self.execution.result_data = {
             'test_cases': self.results,
             'summary': {
@@ -447,6 +453,15 @@ class TestExecutor:
 
                 result['steps'].append(step_result)
 
+                # 收集手动截图（截图步骤）
+                if step_data['action_type'] == 'screenshot' and step_result.get('screenshot'):
+                    result['screenshots'].append({
+                        'url': step_result['screenshot'],
+                        'description': f'步骤 {step_data["step_number"]} 截图',
+                        'step_number': step_data['step_number'],
+                        'timestamp': datetime.now().isoformat()
+                    })
+
                 # 显式更新self.current_page，确保引用正确
                 if step_result.get('switched_page'):
                     self.current_page = step_result['switched_page']
@@ -469,6 +484,7 @@ class TestExecutor:
 
                 # 如果步骤失败，捕获失败截图
                 if not step_result['success']:
+                    print(f"✗ 步骤 {step_data['step_number']} 失败 (action={step_data['action_type']}): {step_result.get('error')}")
                     result['status'] = 'failed'
                     # 使用step的error信息作为case的error
                     result['error'] = step_result.get('error', f"步骤 {step_data['step_number']} 执行失败")
@@ -621,6 +637,26 @@ class TestExecutor:
         result['end_time'] = datetime.now().isoformat()
         return result
 
+    def _locate_playwright(self, selector):
+        """在主 frame 与所有子 iframe 中定位元素（iframe 兜底，套件执行专用）"""
+        main = self.current_page.locator(selector)
+        try:
+            if main.count() > 0:
+                return main
+        except Exception:
+            pass
+        for frame in self.current_page.frames:
+            if frame == self.current_page.main_frame:
+                continue
+            try:
+                f = frame.locator(selector)
+                if f.count() > 0:
+                    print(f"🎯 元素在主 frame 未找到，已在 iframe 中命中: {selector}")
+                    return f
+            except Exception:
+                continue
+        return main
+
     def execute_step_playwright(self, step_data):
         """使用 Playwright 执行单个步骤（同步版本）
 
@@ -643,11 +679,17 @@ class TestExecutor:
 
         try:
             # 获取元素定位器
-            if step_data['element']:
-                element = step_data['element']
-                locator_value = element['locator_value']
-                locator_strategy = element['locator_strategy'].lower()
-                element_name = element.get('name', '未知元素')
+            if step_data['element'] or step_data['action_type'] in ('screenshot', 'wait', 'openUrl', 'switchTab'):
+                if step_data['element']:
+                    element = step_data['element']
+                    locator_value = element['locator_value']
+                    locator_strategy = element['locator_strategy'].lower()
+                    element_name = element.get('name', '未知元素')
+                else:
+                    element = None
+                    locator_value = ''
+                    locator_strategy = ''
+                    element_name = '页面'
 
                 # 根据定位策略构造 Playwright 选择器
                 if locator_strategy in ['css', 'css selector']:
@@ -660,6 +702,16 @@ class TestExecutor:
                     selector = f'[name="{locator_value}"]'
                 elif locator_strategy == 'text':
                     selector = f'text={locator_value}'
+                elif locator_strategy == 'placeholder':
+                    selector = f'[placeholder="{locator_value}"]'
+                elif locator_strategy == 'role':
+                    selector = f'[role="{locator_value}"]'
+                elif locator_strategy == 'label':
+                    selector = f'[aria-label="{locator_value}"]'
+                elif locator_strategy == 'title':
+                    selector = f'[title="{locator_value}"]'
+                elif locator_strategy == 'test-id':
+                    selector = f'[data-testid="{locator_value}"]'
                 else:
                     selector = locator_value
 
@@ -704,9 +756,9 @@ class TestExecutor:
                                     select_locator_value = select_match.group(1)
                                 else:
                                     select_locator_value = locator_value.split('/')[0]
-                                select_locator = self.current_page.locator(f"xpath={select_locator_value}")
+                                select_locator = self._locate_playwright(f"xpath={select_locator_value}")
                             else:
-                                select_locator = self.current_page.locator(select_locator_value)
+                                select_locator = self._locate_playwright(select_locator_value)
 
                             # 使用select_option方法
                             select_locator.select_option(value=option_value, timeout=step_data['wait_time'])
@@ -817,14 +869,14 @@ class TestExecutor:
                             try:
                                 if locator_strategy.lower() == 'xpath':
                                     if not base_locator_value.startswith('xpath='):
-                                        candidates = self.current_page.locator(f"xpath={base_locator_value}")
+                                        candidates = self._locate_playwright(f"xpath={base_locator_value}")
                                     else:
-                                        candidates = self.current_page.locator(base_locator_value)
+                                        candidates = self._locate_playwright(base_locator_value)
                                 elif locator_strategy.lower() in ['css', 'css selector']:
-                                    candidates = self.current_page.locator(base_locator_value)
+                                    candidates = self._locate_playwright(base_locator_value)
                                 else:
                                     # 其他策略暂按 CSS 处理
-                                    candidates = self.current_page.locator(base_locator_value)
+                                    candidates = self._locate_playwright(base_locator_value)
 
                                 # 获取匹配元素数量
                                 count = candidates.count()
@@ -862,7 +914,7 @@ class TestExecutor:
                             # 检查并关闭多选下拉框（如果还在显示）
                             if step_result['success']:
                                 try:
-                                    if self.current_page.locator('.el-select-dropdown').first.is_visible():
+                                    if self._locate_playwright('.el-select-dropdown').first.is_visible():
                                         # 点击空白处关闭
                                         self.current_page.click('body', position={'x': 10, 'y': 10}, timeout=3000)
                                         self.current_page.wait_for_timeout(500)
@@ -882,7 +934,7 @@ class TestExecutor:
 
                                 # 先尝试滚动到元素（确保元素在视口内）
                                 try:
-                                    self.current_page.locator(selector).scroll_into_view_if_needed(timeout=5000)
+                                    self._locate_playwright(selector).scroll_into_view_if_needed(timeout=5000)
                                     print(f"  ✓ 元素已滚动到视口")
                                 except Exception as e:
                                     print(f"  ⚠️  滚动失败: {str(e)[:50]}")
@@ -944,13 +996,13 @@ class TestExecutor:
                     step_result['success'] = True
 
                 elif step_data['action_type'] == 'scroll':
-                    self.current_page.locator(selector).scroll_into_view_if_needed()
+                    self._locate_playwright(selector).scroll_into_view_if_needed()
                     step_result['success'] = True
 
                 elif step_data['action_type'] == 'screenshot':
-                    screenshot_path = f'screenshots/step_{step_data["step_number"]}.png'
-                    self.current_page.screenshot(path=screenshot_path)
-                    step_result['screenshot'] = screenshot_path
+                    import base64
+                    screenshot_bytes = self.current_page.screenshot()
+                    step_result['screenshot'] = f"data:image/png;base64,{base64.b64encode(screenshot_bytes).decode()}"
                     step_result['success'] = True
 
                 elif step_data['action_type'] == 'assert':
@@ -985,10 +1037,30 @@ class TestExecutor:
                         if not is_visible:
                             step_result['error'] = f"✗ 断言失败: 元素 '{element_name}' 不可见"
                     elif step_data['assert_type'] == 'exists':
-                        count = self.current_page.locator(selector).count()
+                        count = self._locate_playwright(selector).count()
                         step_result['success'] = count > 0
                         if count == 0:
                             step_result['error'] = f"✗ 断言失败: 元素 '{element_name}' 不存在"
+
+                elif step_data['action_type'] == 'openUrl':
+                    # 打开URL：支持绝对URL或相对路径（相对路径自动拼接项目 base_url）
+                    raw = (step_data.get('input_value') or '').strip()
+                    base = None
+                    if getattr(self, 'test_suite', None):
+                        base = getattr(getattr(self.test_suite, 'project', None), 'base_url', None)
+                    if raw.startswith('http://') or raw.startswith('https://'):
+                        target = raw
+                    elif base:
+                        target = base.rstrip('/') + ('/' + raw.lstrip('/') if raw else '')
+                    else:
+                        target = raw
+                    try:
+                        self.current_page.goto(target, wait_until='networkidle', timeout=30000)
+                        step_result['success'] = True
+                        print(f"✓ 成功打开URL: {target}")
+                    except Exception as e:
+                        step_result['success'] = False
+                        step_result['error'] = f"打开URL失败: {target} - {str(e)}"
 
                 elif step_data['action_type'] == 'wait':
                     self.current_page.wait_for_timeout(step_data['wait_time'])
@@ -1776,6 +1848,15 @@ class TestExecutor:
                 step_result = self.execute_step_selenium(driver, step_data)
                 result['steps'].append(step_result)
 
+                # 收集手动截图（截图步骤）
+                if step_data['action_type'] == 'screenshot' and step_result.get('screenshot'):
+                    result['screenshots'].append({
+                        'url': step_result['screenshot'],
+                        'description': f'步骤 {step_data["step_number"]} 截图',
+                        'step_number': step_data['step_number'],
+                        'timestamp': datetime.now().isoformat()
+                    })
+
                 # 步骤执行完后添加短暂延迟，确保页面状态稳定
                 # 特别是点击操作后，可能触发动画、下拉框展开等
                 if step_result['success'] and step_data['action_type'] in ['click', 'fill', 'hover']:
@@ -1787,6 +1868,7 @@ class TestExecutor:
 
                 # 如果步骤失败,捕获失败截图
                 if not step_result['success']:
+                    print(f"✗ 步骤 {step_data['step_number']} 失败 (action={step_data['action_type']}): {step_result.get('error')}")
                     result['status'] = 'failed'
                     # 使用step的error信息作为case的error
                     result['error'] = step_result.get('error', f"步骤 {step_data['step_number']} 执行失败")
@@ -1859,6 +1941,15 @@ class TestExecutor:
                 step_result = self.execute_step_selenium(driver, step_data)
                 result['steps'].append(step_result)
 
+                # 收集手动截图（截图步骤）
+                if step_data['action_type'] == 'screenshot' and step_result.get('screenshot'):
+                    result['screenshots'].append({
+                        'url': step_result['screenshot'],
+                        'description': f'步骤 {step_data["step_number"]} 截图',
+                        'step_number': step_data['step_number'],
+                        'timestamp': datetime.now().isoformat()
+                    })
+
                 if not step_result['success']:
                     result['status'] = 'failed'
                     # 使用step的error信息作为case的error
@@ -1886,6 +1977,33 @@ class TestExecutor:
         result['end_time'] = datetime.now().isoformat()
         return result
 
+    def _selenium_wait_element(self, driver, by, value, timeout, condition='presence'):
+        """Selenium 定位元素：主 frame 找不到时遍历 iframe WebElement 兜底"""
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        wait = WebDriverWait(driver, timeout)
+        ec = {
+            'presence': EC.presence_of_element_located,
+            'visibility': EC.visibility_of_element_located,
+            'clickable': EC.element_to_be_clickable,
+        }.get(condition, EC.presence_of_element_located)
+        try:
+            return wait.until(ec((by, value)))
+        except Exception:
+            pass
+        # 遍历 iframe WebElement
+        try:
+            for frame in driver.find_elements(By.TAG_NAME, 'iframe'):
+                try:
+                    el = frame.find_element(by, value)
+                    if el:
+                        return el
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return wait.until(ec((by, value)))
+
     def execute_step_selenium(self, driver, step_data):
         """使用 Selenium 执行单个步骤
 
@@ -1905,11 +2023,17 @@ class TestExecutor:
         }
 
         try:
-            if step_data['element']:
-                element = step_data['element']
-                locator_value = element['locator_value']
-                locator_strategy = element['locator_strategy'].lower()
-                element_name = element.get('name', '未知元素')
+            if step_data['element'] or step_data['action_type'] in ('screenshot', 'wait', 'openUrl', 'switchTab'):
+                if step_data['element']:
+                    element = step_data['element']
+                    locator_value = element['locator_value']
+                    locator_strategy = element['locator_strategy'].lower()
+                    element_name = element.get('name', '未知元素')
+                else:
+                    element = None
+                    locator_value = ''
+                    locator_strategy = ''
+                    element_name = '页面'
 
                 # 根据定位策略获取元素
                 wait = WebDriverWait(driver, step_data['wait_time'] / 1000)
@@ -1929,6 +2053,21 @@ class TestExecutor:
                     by = By.ID
                 elif locator_strategy == 'name':
                     by = By.NAME
+                elif locator_strategy == 'placeholder':
+                    by = By.CSS_SELECTOR
+                    locator_value = f'[placeholder="{locator_value}"]'
+                elif locator_strategy == 'role':
+                    by = By.CSS_SELECTOR
+                    locator_value = f'[role="{locator_value}"]'
+                elif locator_strategy == 'label':
+                    by = By.CSS_SELECTOR
+                    locator_value = f'[aria-label="{locator_value}"]'
+                elif locator_strategy == 'title':
+                    by = By.CSS_SELECTOR
+                    locator_value = f'[title="{locator_value}"]'
+                elif locator_strategy == 'test-id':
+                    by = By.CSS_SELECTOR
+                    locator_value = f'[data-testid="{locator_value}"]'
                 elif locator_strategy in ['class', 'class name']:
                     by = By.CLASS_NAME
                 elif locator_strategy in ['tag', 'tag name']:
@@ -1979,7 +2118,7 @@ class TestExecutor:
 
                         try:
                             # 查找select元素
-                            select_element = wait.until(EC.presence_of_element_located((by, select_locator_value)))
+                            select_element = self._selenium_wait_element(driver, by, select_locator_value, step_data['wait_time'] / 1000, 'presence')
 
                             # 使用Select类选择选项
                             select_obj = Select(select_element)
@@ -2039,12 +2178,12 @@ class TestExecutor:
                             if not found_visible:
                                 # 如果没找到可见元素，回退到默认行为（可能会抛出超时）
                                 print(f"  ⚠️ 未找到可见的下拉框选项，尝试默认等待...")
-                                element_obj = wait.until(EC.visibility_of_element_located((by, locator_value)))
+                                element_obj = self._selenium_wait_element(driver, by, locator_value, step_data['wait_time'] / 1000, 'visibility')
                         else:
-                            element_obj = wait.until(EC.element_to_be_clickable((by, locator_value)))
+                            element_obj = self._selenium_wait_element(driver, by, locator_value, step_data['wait_time'] / 1000, 'clickable')
                     else:
                         # 其他操作：等待元素出现
-                        element_obj = wait.until(EC.presence_of_element_located((by, locator_value)))
+                        element_obj = self._selenium_wait_element(driver, by, locator_value, step_data['wait_time'] / 1000, 'presence')
 
                     # click操作的实际执行逻辑（使用 stale element 重试机制）
                     for attempt in range(max_retries):
@@ -2058,9 +2197,9 @@ class TestExecutor:
                                 time.sleep(wait_time)
                                 # 重新定位元素
                                 if is_dropdown_option:
-                                    element_obj = wait.until(EC.visibility_of_element_located((by, locator_value)))
+                                    element_obj = self._selenium_wait_element(driver, by, locator_value, step_data['wait_time'] / 1000, 'visibility')
                                 else:
-                                    element_obj = wait.until(EC.element_to_be_clickable((by, locator_value)))
+                                    element_obj = self._selenium_wait_element(driver, by, locator_value, step_data['wait_time'] / 1000, 'clickable')
                                 # 等待元素状态稳定
                                 time.sleep(0.3)
                                 print(f"✓ 元素重新定位成功")
@@ -2114,7 +2253,7 @@ class TestExecutor:
                                             element_obj = wait.until(
                                                 EC.visibility_of_element_located((by, locator_value)))
                                         else:
-                                            element_obj = wait.until(EC.element_to_be_clickable((by, locator_value)))
+                                            element_obj = self._selenium_wait_element(driver, by, locator_value, step_data['wait_time'] / 1000, 'clickable')
                                     else:
                                         raise
                             else:
@@ -2122,7 +2261,7 @@ class TestExecutor:
 
                 elif step_data['action_type'] == 'fill':
                     # 先定位元素
-                    element_obj = wait.until(EC.presence_of_element_located((by, locator_value)))
+                    element_obj = self._selenium_wait_element(driver, by, locator_value, step_data['wait_time'] / 1000, 'presence')
                     
                     # 解析输入值中的变量表达式
                     resolved_value = resolve_variables(step_data['input_value'])
@@ -2146,7 +2285,7 @@ class TestExecutor:
                                 wait_time = 1.0 if attempt == 0 else 1.5
                                 print(f"等待 {wait_time}秒 让页面稳定...")
                                 time.sleep(wait_time)
-                                element_obj = wait.until(EC.presence_of_element_located((by, locator_value)))
+                                element_obj = self._selenium_wait_element(driver, by, locator_value, step_data['wait_time'] / 1000, 'presence')
                                 time.sleep(0.3)  # 确保元素状态稳定
                                 print(f"✓ 元素重新定位成功")
                             else:
@@ -2154,7 +2293,7 @@ class TestExecutor:
 
                 elif step_data['action_type'] == 'getText':
                     # 先定位元素
-                    element_obj = wait.until(EC.presence_of_element_located((by, locator_value)))
+                    element_obj = self._selenium_wait_element(driver, by, locator_value, step_data['wait_time'] / 1000, 'presence')
                     
                     for attempt in range(max_retries):
                         try:
@@ -2169,7 +2308,7 @@ class TestExecutor:
                                 wait_time = 1.0 if attempt == 0 else 1.5
                                 print(f"等待 {wait_time}秒 让页面稳定...")
                                 time.sleep(wait_time)
-                                element_obj = wait.until(EC.presence_of_element_located((by, locator_value)))
+                                element_obj = self._selenium_wait_element(driver, by, locator_value, step_data['wait_time'] / 1000, 'presence')
                                 time.sleep(0.3)  # 确保元素状态稳定
                                 print(f"✓ 元素重新定位成功")
                             else:
@@ -2177,7 +2316,7 @@ class TestExecutor:
 
                 elif step_data['action_type'] == 'hover':
                     # 先定位元素
-                    element_obj = wait.until(EC.presence_of_element_located((by, locator_value)))
+                    element_obj = self._selenium_wait_element(driver, by, locator_value, step_data['wait_time'] / 1000, 'presence')
                     
                     from selenium.webdriver.common.action_chains import ActionChains
                     for attempt in range(max_retries):
@@ -2192,21 +2331,21 @@ class TestExecutor:
                                 wait_time = 1.0 if attempt == 0 else 1.5
                                 print(f"等待 {wait_time}秒 让页面稳定...")
                                 time.sleep(wait_time)
-                                element_obj = wait.until(EC.presence_of_element_located((by, locator_value)))
+                                element_obj = self._selenium_wait_element(driver, by, locator_value, step_data['wait_time'] / 1000, 'presence')
                                 time.sleep(0.3)  # 确保元素状态稳定
                                 print(f"✓ 元素重新定位成功")
                             else:
                                 raise
 
                 elif step_data['action_type'] == 'screenshot':
-                    screenshot_path = f'screenshots/step_{step_data["step_number"]}.png'
-                    driver.save_screenshot(screenshot_path)
-                    step_result['screenshot'] = screenshot_path
+                    import base64
+                    screenshot_bytes = driver.get_screenshot_as_png()
+                    step_result['screenshot'] = f"data:image/png;base64,{base64.b64encode(screenshot_bytes).decode()}"
                     step_result['success'] = True
 
                 elif step_data['action_type'] == 'assert':
                     # 先定位元素
-                    element_obj = wait.until(EC.presence_of_element_located((by, locator_value)))
+                    element_obj = self._selenium_wait_element(driver, by, locator_value, step_data['wait_time'] / 1000, 'presence')
                     
                     # 解析断言值中的变量
                     resolved_assert_value = resolve_variables(step_data['assert_value'])
@@ -2242,6 +2381,27 @@ class TestExecutor:
                         step_result['success'] = True
 
             else:
+                if step_data['action_type'] == 'openUrl':
+                    # 打开URL：支持绝对URL或相对路径（相对路径自动拼接项目 base_url）
+                    raw = (step_data.get('input_value') or '').strip()
+                    base = None
+                    if getattr(self, 'test_suite', None):
+                        base = getattr(getattr(self.test_suite, 'project', None), 'base_url', None)
+                    if raw.startswith('http://') or raw.startswith('https://'):
+                        target = raw
+                    elif base:
+                        target = base.rstrip('/') + ('/' + raw.lstrip('/') if raw else '')
+                    else:
+                        target = raw
+                    try:
+                        driver.get(target)
+                        time.sleep(2)
+                        step_result['success'] = True
+                        print(f"✓ 成功打开URL: {target}")
+                    except Exception as e:
+                        step_result['success'] = False
+                        step_result['error'] = f"打开URL失败: {target} - {str(e)}"
+
                 if step_data['action_type'] == 'wait':
                     time.sleep(step_data['wait_time'] / 1000)
                     step_result['success'] = True

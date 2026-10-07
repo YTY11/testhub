@@ -96,6 +96,10 @@
                 <el-option :label="t('uiAutomation.testCase.headedMode')" :value="false" />
                 <el-option :label="t('uiAutomation.testCase.headlessMode')" :value="true" />
               </el-select>
+              <el-button size="small" @click="configureVncUrl" title="设置 noVNC 调试地址（有头模式执行时自动打开）">
+                <el-icon><Setting /></el-icon>
+                VNC
+              </el-button>
               <el-button size="small" type="success" @click="runTestCase(selectedTestCase)" :loading="isRunning">
                 <el-icon v-if="!isRunning"><CaretRight /></el-icon>
                 {{ isRunning ? t('uiAutomation.testCase.running') : t('uiAutomation.testCase.runLabel') }}
@@ -157,6 +161,7 @@
                             <el-option :label="t('uiAutomation.testCase.actionAssert')" value="assert" />
                             <el-option :label="t('uiAutomation.testCase.actionWait')" value="wait" />
                             <el-option :label="t('uiAutomation.testCase.actionSwitchTab')" value="switchTab" />
+                            <el-option :label="t('uiAutomation.testCase.actionOpenUrl')" value="openUrl" />
                           </el-select>
                           <el-select
                             v-if="needsElement(element.action_type)"
@@ -310,14 +315,50 @@
                         </div>
                       </div>
                     </div>
-                    <el-empty :description="t('uiAutomation.testCase.noLogs')" />
+                    <el-empty v-else :description="t('uiAutomation.testCase.noLogs')" />
                   </div>
                 </el-tab-pane>
-                <el-tab-pane :label="t('uiAutomation.testCase.failedScreenshots')" name="screenshots" v-if="executionResult.screenshots && executionResult.screenshots.length > 0">
+                <el-tab-pane :label="'执行截图'" name="manualScreenshots" v-if="manualScreenshots.length > 0">
                   <div class="screenshots-container">
                     <div
-                      v-for="(screenshot, index) in executionResult.screenshots"
-                      :key="index"
+                      v-for="(screenshot, index) in manualScreenshots"
+                      :key="'m' + index"
+                      class="screenshot-item"
+                      @click="previewScreenshot(screenshot)"
+                    >
+                      <div class="screenshot-wrapper">
+                        <img
+                          :src="screenshot.url"
+                          :alt="`${t('uiAutomation.testCase.screenshot')} ${index + 1}`"
+                          :data-index="index"
+                          @error="handleImageError"
+                          @load="handleImageLoad"
+                        />
+                        <div class="screenshot-placeholder" v-if="!screenshot.loaded">
+                          <el-icon><Picture /></el-icon>
+                          <span>{{ t('uiAutomation.testCase.loadingImage') }}</span>
+                        </div>
+                        <div class="screenshot-error" v-if="screenshot.error">
+                          <el-icon><Warning /></el-icon>
+                          <span>{{ t('uiAutomation.testCase.imageLoadFailed') }}</span>
+                        </div>
+                        <div class="screenshot-overlay">
+                          <el-icon class="zoom-icon"><ZoomIn /></el-icon>
+                        </div>
+                      </div>
+                      <div class="screenshot-info">
+                        <p class="screenshot-description">{{ screenshot.description || t('uiAutomation.testCase.screenshot') + ' ' + (index + 1) }}</p>
+                        <p class="screenshot-meta" v-if="screenshot.step_number">{{ t('uiAutomation.testCase.step') }} {{ screenshot.step_number }}</p>
+                        <p class="screenshot-time" v-if="screenshot.timestamp">{{ formatTime(screenshot.timestamp) }}</p>
+                      </div>
+                    </div>
+                  </div>
+                </el-tab-pane>
+                <el-tab-pane :label="t('uiAutomation.testCase.failedScreenshots')" name="failedScreenshots" v-if="failedScreenshots.length > 0">
+                  <div class="screenshots-container">
+                    <div
+                      v-for="(screenshot, index) in failedScreenshots"
+                      :key="'f' + index"
                       class="screenshot-item"
                       @click="previewScreenshot(screenshot)"
                     >
@@ -504,7 +545,7 @@
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Search, Plus, Edit, Delete, Check, CaretRight, ArrowUp, ArrowDown, Rank, Picture, Warning, View, ZoomIn, Refresh, WarningFilled, MagicStick
+  Search, Plus, Edit, Delete, Check, CaretRight, ArrowUp, ArrowDown, Rank, Picture, Warning, View, ZoomIn, Refresh, WarningFilled, MagicStick, Setting
 } from '@element-plus/icons-vue'
 import draggable from 'vuedraggable'
 import DataFactorySelector from '@/components/DataFactorySelector.vue'
@@ -524,6 +565,7 @@ import {
   getLocatorStrategies
 } from '@/api/ui_automation'
 import { fetchAllFn } from '@/utils/pagination'
+import { openVncIfHeaded, getVncUrl, setVncUrl } from '@/utils/vnc'
 import { getVariableFunctions } from '@/api/data-factory'
 
 // 响应式数据
@@ -538,6 +580,14 @@ const showCreateDialog = ref(false)
 const editingTestCase = ref(null)
 const executionResult = ref(null)
 const resultActiveTab = ref('logs')
+
+// 截图分类：manual=手动步骤截图, failure=失败/异常截图（与执行记录页一致）
+const isFailureScreenshot = (s) => {
+  const d = s.description || ''
+  return s.type === 'failure' || /失败截图|异常截图|截图失败/.test(d)
+}
+const manualScreenshots = computed(() => (executionResult.value?.screenshots || []).filter(s => !isFailureScreenshot(s)))
+const failedScreenshots = computed(() => (executionResult.value?.screenshots || []).filter(s => isFailureScreenshot(s)))
 const allStepsExpanded = ref(false)
 const showSteps = ref(true)
 const showScreenshotPreview = ref(false)
@@ -682,7 +732,7 @@ const onStepsReorder = () => {
 
 const onActionTypeChange = (step) => {
   // 根据操作类型重置相关参数
-  if (step.action_type !== 'fill') {
+  if (!['fill', 'openUrl'].includes(step.action_type)) {
     step.input_value = ''
   }
   if (step.action_type !== 'wait') {
@@ -703,7 +753,7 @@ const onElementChange = (step) => {
 }
 
 const needsInputValue = (actionType) => {
-  return ['fill', 'switchTab'].includes(actionType)
+  return ['fill', 'switchTab', 'openUrl'].includes(actionType)
 }
 
 const needsWaitTime = (actionType) => {
@@ -711,7 +761,7 @@ const needsWaitTime = (actionType) => {
 }
 
 const needsElement = (actionType) => {
-  return !['wait', 'switchTab', 'screenshot'].includes(actionType)
+  return !['wait', 'switchTab', 'screenshot', 'openUrl'].includes(actionType)
 }
 
 const expandAllSteps = () => {
@@ -745,11 +795,30 @@ const saveTestCase = async () => {
     }
 }
 
+// 配置 noVNC 调试地址（有头模式执行时自动打开容器桌面）
+const configureVncUrl = async () => {
+  try {
+    const { value } = await ElMessageBox.prompt(
+      '请输入 noVNC 调试地址（例如 http://服务器IP:6080/vnc.html），有头模式执行时会自动在浏览器打开',
+      'VNC 调试地址',
+      {
+        inputValue: getVncUrl(),
+        inputPlaceholder: 'http://服务器IP:6080/vnc.html'
+      }
+    )
+    setVncUrl(value)
+    ElMessage.success('VNC 调试地址已保存')
+  } catch (e) { /* 用户取消 */ }
+}
+
 const runTestCase = async (testCase) => {
   isRunning.value = true
   try {
     const modeText = headlessMode.value ? t('uiAutomation.testCase.runMode.headless') : t('uiAutomation.testCase.runMode.headed')
     ElMessage.info(t('uiAutomation.testCase.run.start', { engine: selectedEngine.value.toUpperCase(), browser: selectedBrowser.value.toUpperCase(), mode: modeText }))
+
+    // 有头模式：若已配置 noVNC 地址，自动在用户端浏览器打开容器桌面调试画面
+    openVncIfHeaded(headlessMode.value)
 
     const response = await runTestCaseApi(testCase.id, {
       project_id: projectId.value,
@@ -1142,7 +1211,8 @@ const getActionTypeText = (actionType) => {
     'scroll': t('uiAutomation.testCase.actionType.scroll'),
     'screenshot': t('uiAutomation.testCase.actionType.screenshot'),
     'assert': t('uiAutomation.testCase.actionType.assert'),
-    'wait': t('uiAutomation.testCase.actionType.wait')
+    'wait': t('uiAutomation.testCase.actionType.wait'),
+    'openUrl': '打开URL'
   }
   return textMap[actionType] || actionType
 }
@@ -1164,7 +1234,8 @@ const getActionText = (actionType) => {
     'scroll': t('uiAutomation.testCase.actionText.scroll'),
     'screenshot': t('uiAutomation.testCase.actionText.screenshot'),
     'assert': t('uiAutomation.testCase.actionText.assert'),
-    'wait': t('uiAutomation.testCase.actionText.wait')
+    'wait': t('uiAutomation.testCase.actionText.wait'),
+    'openUrl': '打开URL'
   }
   return actionMap[actionType] || actionType
 }

@@ -185,13 +185,38 @@
             </div>
           </el-tab-pane>
 
-          <!-- 失败截图 - 仅失败或错误状态显示 -->
-          <el-tab-pane :label="$t('uiAutomation.execution.failedScreenshots')" name="screenshots" v-if="currentExecution.status === 'failed' || currentExecution.status === 'error'">
+          <!-- 执行截图 - 手动步骤截图，所有状态都显示 -->
+          <el-tab-pane :label="'执行截图'" name="screenshots">
             <div class="screenshots-container">
-              <div v-if="currentExecution.screenshots && currentExecution.screenshots.length > 0">
-                <div v-for="(screenshot, index) in currentExecution.screenshots" :key="index" class="screenshot-item">
+              <div v-if="manualScreenshots.length > 0">
+                <div v-for="(screenshot, index) in manualScreenshots" :key="'m' + index" class="screenshot-item">
                   <h5>{{ screenshot.description || `${$t('uiAutomation.execution.screenshot')} ${index + 1}` }}</h5>
                   <!-- 检查截图URL是否有效 -->
+                  <div v-if="screenshot.url" class="screenshot-wrapper">
+                    <img
+                      :src="screenshot.url"
+                      :alt="screenshot.description"
+                      class="screenshot-img"
+                      @error="handleImageError($event, screenshot)"
+                    />
+                  </div>
+                  <div v-else class="screenshot-error">
+                    <el-icon><WarningFilled /></el-icon>
+                    <span>{{ $t('uiAutomation.execution.screenshotFailed') }}{{ screenshot.error || $t('uiAutomation.execution.unknownReason') }}</span>
+                  </div>
+                  <p class="screenshot-time">{{ formatDateTime(screenshot.timestamp) }}</p>
+                </div>
+              </div>
+              <el-empty v-else :description="$t('uiAutomation.execution.noScreenshots')" />
+            </div>
+          </el-tab-pane>
+
+          <!-- 失败截图 - 仅失败或错误状态显示 -->
+          <el-tab-pane :label="$t('uiAutomation.execution.failedScreenshots')" name="failedScreenshots" v-if="currentExecution.status === 'failed' || currentExecution.status === 'error'">
+            <div class="screenshots-container">
+              <div v-if="failedScreenshots.length > 0">
+                <div v-for="(screenshot, index) in failedScreenshots" :key="'f' + index" class="screenshot-item">
+                  <h5>{{ screenshot.description || `${$t('uiAutomation.execution.screenshot')} ${index + 1}` }}</h5>
                   <div v-if="screenshot.url" class="screenshot-wrapper">
                     <img
                       :src="screenshot.url"
@@ -262,7 +287,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, View, WarningFilled, Refresh } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
@@ -274,6 +299,7 @@ import {
   runTestCase
 } from '@/api/ui_automation'
 import { fetchAllFn } from '@/utils/pagination'
+import { openVncIfHeaded } from '@/utils/vnc'
 
 const { t } = useI18n()
 
@@ -301,6 +327,14 @@ const selectedIds = ref([])
 const showDetailDialog = ref(false)
 const activeTab = ref('logs')
 const currentExecution = ref(null)
+
+// 截图分类：manual=手动步骤截图, failure=失败/异常截图
+const isFailureScreenshot = (s) => {
+  const d = s.description || ''
+  return s.type === 'failure' || /失败截图|异常截图|截图失败/.test(d)
+}
+const manualScreenshots = computed(() => (currentExecution.value?.screenshots || []).filter(s => !isFailureScreenshot(s)))
+const failedScreenshots = computed(() => (currentExecution.value?.screenshots || []).filter(s => isFailureScreenshot(s)))
 
 // 重跑对话框相关
 const showRerunDialogVisible = ref(false)
@@ -578,6 +612,9 @@ const handleRerun = async () => {
 
   rerunning.value = true
   try {
+    // 有头模式：若已配置 noVNC 地址，自动在用户端浏览器打开容器桌面调试画面
+    openVncIfHeaded(rerunFormData.headless)
+
     const response = await runTestCase(rerunFormData.testCaseId, {
       engine: rerunFormData.engine,
       browser: rerunFormData.browser,

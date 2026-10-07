@@ -1410,6 +1410,7 @@ class TestCaseViewSet(viewsets.ModelViewSet):
 
                     # 创建Selenium引擎实例
                     engine = SeleniumTestEngine(browser_type=browser_type, headless=headless)
+                    engine.base_url = test_case.project.base_url
 
                     try:
                         # 启动浏览器
@@ -1616,6 +1617,7 @@ class TestCaseViewSet(viewsets.ModelViewSet):
 
                         # 创建Playwright引擎实例
                         engine = PlaywrightTestEngine(browser_type=browser_type, headless=headless)
+                        engine.base_url = test_case.project.base_url
 
                         try:
                             # 启动浏览器
@@ -1712,18 +1714,19 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                                             if not screenshot_base64:
                                                 screenshot_base64 = await engine.capture_screenshot()
 
-                                        if screenshot_base64:
-                                            screenshots.append({
-                                                'url': screenshot_base64,
-                                                'description': f'步骤 {i} 失败截图: {description or action_type_text}',
-                                                'step_number': i,
-                                                'timestamp': timezone.now().isoformat()
-                                                # 移除 loaded 和 error 字段，让前端自行处理
-                                            })
-                                            execution_logs.append(f"  📸 失败截图已捕获")
+                                                # 仅步骤失败时：保存失败截图并退出执行
+                                                if screenshot_base64:
+                                                    screenshots.append({
+                                                        'url': screenshot_base64,
+                                                        'description': f'步骤 {i} 失败截图: {description or action_type_text}',
+                                                        'step_number': i,
+                                                        'timestamp': timezone.now().isoformat()
+                                                        # 移除 loaded 和 error 字段，让前端自行处理
+                                                    })
+                                                    execution_logs.append(f"  📸 失败截图已捕获")
 
-                                            execution_logs.append(f"  [调试] 步骤失败,准备退出执行...")
-                                            return False
+                                                    execution_logs.append(f"  [调试] 步骤失败,准备退出执行...")
+                                                    return False
 
                                         # 如果是截图步骤且成功,也保存截图
                                         if action_type == 'screenshot' and screenshot_base64:
@@ -1836,6 +1839,11 @@ class TestCaseViewSet(viewsets.ModelViewSet):
             execution.execution_logs = json.dumps(step_results, ensure_ascii=False)
             execution.execution_time = total_time
             execution.finished_at = timezone.now()
+            # 为截图条目补充类型标记（manual=手动步骤截图, failure=失败/异常截图）
+            for _shot in screenshots:
+                if 'type' not in _shot:
+                    _d = (_shot.get('description') or '')
+                    _shot['type'] = 'failure' if ('失败截图' in _d or '异常截图' in _d or '截图失败' in _d) else 'manual'
             execution.screenshots = screenshots
             execution.save()
             logger.info(f"[调试] 执行结果已保存: execution.status = {execution.status}")
@@ -2293,6 +2301,7 @@ class UiScheduledTaskViewSet(viewsets.ModelViewSet):
 
                                     # 创建Selenium引擎实例并执行
                                     engine = SeleniumTestEngine(browser_type=task.browser, headless=task.headless)
+                                    engine.base_url = test_case.project.base_url
 
                                     try:
                                         # 启动浏览器
@@ -2368,6 +2377,7 @@ class UiScheduledTaskViewSet(viewsets.ModelViewSet):
                                         browser_type = browser_map.get(task.browser, 'chromium')
 
                                         engine = PlaywrightTestEngine(browser_type=browser_type, headless=task.headless)
+                                        engine.base_url = test_case.project.base_url
 
                                         try:
                                             # 启动浏览器
@@ -2449,6 +2459,11 @@ class UiScheduledTaskViewSet(viewsets.ModelViewSet):
                                 execution.error_message = execution_result['error_message'] or ''
                                 execution.execution_logs = json.dumps(step_results, ensure_ascii=False)
                                 execution.execution_time = total_time
+                                # 为截图条目补充类型标记（manual=手动步骤截图, failure=失败/异常截图）
+                                for _shot in screenshots:
+                                    if 'type' not in _shot:
+                                        _d = (_shot.get('description') or '')
+                                        _shot['type'] = 'failure' if ('失败截图' in _d or '异常截图' in _d or '截图失败' in _d) else 'manual'
                                 execution.screenshots = screenshots
                                 execution.finished_at = timezone.now()
                                 execution.save()

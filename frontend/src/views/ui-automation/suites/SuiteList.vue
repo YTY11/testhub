@@ -278,6 +278,7 @@ import {
   runTestSuite
 } from '@/api/ui_automation'
 import { fetchAllFn } from '@/utils/pagination'
+import { openVncIfHeaded } from '@/utils/vnc'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -543,6 +544,9 @@ const runSuite = (suite) => {
 const confirmRunSuite = async () => {
   running.value = true
   try {
+    // 有头模式：若已配置 noVNC 地址，自动在用户端浏览器打开容器桌面调试画面
+    openVncIfHeaded(runConfig.headless)
+
     const requestData = {
       use_ai: false,
       engine: runConfig.engine,

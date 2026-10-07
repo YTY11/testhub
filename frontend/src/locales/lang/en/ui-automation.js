@@ -1110,6 +1110,7 @@ export default {
     actionAssert: 'Assert',
     actionWait: 'Wait',
     actionSwitchTab: 'Switch Tab',
+    actionOpenUrl: 'Open URL',
     selectElement: 'Select Element',
     inputValue: 'Input Value:',
     inputPlaceholder: "Enter content, supports variables like '{'random_phone()'}'",

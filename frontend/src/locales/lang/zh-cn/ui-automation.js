@@ -1110,6 +1110,7 @@ export default {
     actionAssert: '断言',
     actionWait: '等待',
     actionSwitchTab: '切换标签页',
+    actionOpenUrl: '打开URL',
     selectElement: '选择元素',
     inputValue: '输入值：',
     inputPlaceholder: "请输入内容，支持变量如 '{'random_phone()'}'",

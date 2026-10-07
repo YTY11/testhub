@@ -26,6 +26,7 @@ class PlaywrightTestEngine:
         """
         self.browser_type = browser_type
         self.headless = headless
+        self.base_url = None
         self.playwright = None
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
@@ -188,6 +189,57 @@ class PlaywrightTestEngine:
         except Exception as e:
             logger.error(f"关闭浏览器失败: {str(e)}")
 
+    def _build_locator(self, page, locator_strategy, locator_value):
+        """根据定位策略在指定 page/frame 上构建定位器（支持跨 iframe 复用）"""
+        strategy = (locator_strategy or 'css').lower()
+        value = locator_value or ''
+        if strategy == 'id':
+            return page.locator(f'#{value}')
+        if strategy in ['css', 'css selector']:
+            if any(k in value.lower() for k in ['dropdown', 'el-select', ':has(', 'li']):
+                return page.locator(f"{value} >> visible=true").first if 'visible=true' not in value else page.locator(value).first
+            return page.locator(value)
+        if strategy == 'xpath':
+            if any(k in value.lower() for k in ['dropdown', 'el-select', ':has(', 'li']):
+                return page.locator(f"xpath={value} >> visible=true").first if 'visible=true' not in value else page.locator(f"xpath={value}").first
+            if '[' in value and ']' in value:
+                return page.locator(f'xpath={value}')
+            return page.locator(f'xpath={value}').first
+        if strategy == 'text':
+            return page.get_by_text(value)
+        if strategy == 'name':
+            return page.locator(f'[name="{value}"]')
+        if strategy == 'placeholder':
+            return page.get_by_placeholder(value)
+        if strategy == 'role':
+            return page.get_by_role(value)
+        if strategy == 'label':
+            return page.get_by_label(value)
+        if strategy == 'title':
+            return page.get_by_title(value)
+        if strategy == 'test-id':
+            return page.get_by_test_id(value)
+        return page.locator(value)
+
+    async def _resolve_frame_locator(self, locator_strategy, locator_value, main_locator):
+        """优先使用主 frame 定位；若主 frame 未命中，遍历所有子 iframe 定位元素"""
+        try:
+            if await main_locator.count() > 0:
+                return main_locator
+        except Exception:
+            pass
+        for frame in self.page.frames:
+            if frame == self.page.main_frame:
+                continue
+            try:
+                f_locator = self._build_locator(frame, locator_strategy, locator_value)
+                if await f_locator.count() > 0:
+                    logger.info(f"🎯 元素在主 frame 未找到，已在 iframe 中命中: {locator_value}")
+                    return f_locator
+            except Exception:
+                continue
+        return main_locator
+
     async def execute_step(self, step, element_data: Dict) -> Tuple[bool, str, Optional[str]]:
         """
         执行单个测试步骤
@@ -214,6 +266,26 @@ class PlaywrightTestEngine:
         screenshot_base64 = None
 
         try:
+            # openUrl：打开指定URL，相对路径自动拼接项目 base_url（登录后跳转其它页面）
+            if action_type == 'openUrl':
+                raw = (resolved_input_value or '').strip()
+                if raw.startswith('http://') or raw.startswith('https://'):
+                    target_url = raw
+                elif self.base_url:
+                    target_url = self.base_url.rstrip('/') + ('/' + raw.lstrip('/') if raw else '')
+                else:
+                    target_url = raw
+                try:
+                    await self.page.goto(target_url, wait_until='networkidle', timeout=30000)
+                    await asyncio.sleep(2)
+                    execution_time = round(time.time() - start_time, 2)
+                    log = f"✓ 成功打开URL: {target_url} - 耗时 {execution_time}秒"
+                    return True, log, None
+                except Exception as e:
+                    execution_time = round(time.time() - start_time, 2)
+                    log = f"✗ 打开URL失败: {target_url}\n  - 错误: {str(e)}"
+                    return False, log, None
+
             # wait和screenshot操作不需要元素定位器
             if action_type == 'wait':
                 wait_seconds = step.wait_time / 1000 if step.wait_time else 1
@@ -315,51 +387,9 @@ class PlaywrightTestEngine:
             else:
                 timeout_ms = 5000  # 默认5秒
 
-            # 根据定位策略获取元素
-            if locator_strategy.lower() == 'id':
-                locator = self.page.locator(f'#{locator_value}')
-            elif locator_strategy.lower() in ['css', 'css selector']:
-                # CSS 定位器，对于可能匹配多个元素的情况，添加 .first
-                # 特别是下拉框选项，可能有多个同名选项
-                if any(keyword in locator_value.lower() for keyword in ['dropdown', 'el-select', ':has(', 'li']):
-                    # 如果是下拉框选项，强制只查找可见元素
-                    if 'visible=true' not in locator_value:
-                        locator = self.page.locator(f"{locator_value} >> visible=true").first
-                    else:
-                        locator = self.page.locator(locator_value).first
-                else:
-                    locator = self.page.locator(locator_value)
-            elif locator_strategy.lower() == 'xpath':
-                # XPath 定位器
-                # 如果是下拉框选项，强制只查找可见元素
-                if any(keyword in locator_value.lower() for keyword in ['dropdown', 'el-select', ':has(', 'li']):
-                    if 'visible=true' not in locator_value:
-                        locator = self.page.locator(f"xpath={locator_value} >> visible=true").first
-                    else:
-                        locator = self.page.locator(f"xpath={locator_value}").first
-                # 如果 XPath 已经包含索引 [n]，不要添加 .first（会冲突）
-                elif '[' in locator_value and ']' in locator_value:
-                    locator = self.page.locator(f'xpath={locator_value}')
-                else:
-                    # 如果没有索引，添加 .first 避免 strict mode violation
-                    locator = self.page.locator(f'xpath={locator_value}').first
-            elif locator_strategy.lower() == 'text':
-                locator = self.page.get_by_text(locator_value)
-            elif locator_strategy.lower() == 'name':
-                locator = self.page.locator(f'[name="{locator_value}"]')
-            elif locator_strategy.lower() == 'placeholder':
-                locator = self.page.get_by_placeholder(locator_value)
-            elif locator_strategy.lower() == 'role':
-                locator = self.page.get_by_role(locator_value)
-            elif locator_strategy.lower() == 'label':
-                locator = self.page.get_by_label(locator_value)
-            elif locator_strategy.lower() == 'title':
-                locator = self.page.get_by_title(locator_value)
-            elif locator_strategy.lower() == 'test-id':
-                locator = self.page.get_by_test_id(locator_value)
-            else:
-                # 默认使用CSS选择器
-                locator = self.page.locator(locator_value)
+            # 根据定位策略构建定位器；若主 frame 未命中，自动遍历子 iframe 定位元素
+            locator = self._build_locator(self.page, locator_strategy, locator_value)
+            locator = await self._resolve_frame_locator(locator_strategy, locator_value, locator)
 
             # 执行操作
             execution_time = 0
