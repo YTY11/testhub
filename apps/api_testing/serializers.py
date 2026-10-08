@@ -428,9 +428,11 @@ class ScheduledTaskSerializer(serializers.ModelSerializer):
                     notification_setting.notify_on_failure = task.notify_on_failure
                     notification_setting.notification_config = notification_config
                     notification_setting.save()
-                    logger.info(f"通知设置已更新 - 类型: {notification_setting.notification_type}, 配置: {notification_config.name}")
+                    config_name = notification_config.name if notification_config else ''
+                    logger.info(f"通知设置已更新 - 类型: {notification_setting.notification_type}, 配置: {config_name}")
                 else:
-                    logger.info(f"通知设置已创建 - 类型: {notification_setting.notification_type}, 配置: {notification_config.name}")
+                    config_name = notification_config.name if notification_config else ''
+                    logger.info(f"通知设置已创建 - 类型: {notification_setting.notification_type}, 配置: {config_name}")
 
             except Exception as e:
                 logger.error(f"更新通知设置时出错: {e}")

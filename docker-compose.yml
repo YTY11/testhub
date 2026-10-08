@@ -1,0 +1,137 @@
+version: '3.8'
+networks:
+  testhub-net:
+    driver: bridge
+services:
+  # ========== MySQL 数据库 ==========
+  testhub-mysql:
+    image: mysql:8.0
+    container_name: testhub-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: testhubadmin123
+      MYSQL_DATABASE: testhub
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - /data/testhub/mysql:/var/lib/mysql
+    networks:
+      - testhub-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "[localhost](https://localhost)","-uroot","-ptesthubadmin123"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+  # ========== Redis 缓存 ==========
+  testhub-redis:
+    image: redis:7-alpine
+    container_name: testhub-redis
+    restart: always
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - /data/testhub/redis:/data
+    networks:
+      - testhub-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  # ========== 后端 ==========
+  testhub-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    image: testhub-backend:latest
+    container_name: testhub-backend
+    restart: always
+    depends_on:
+      testhub-mysql:
+        condition: service_healthy
+      testhub-redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=testhub-mysql
+      - DB_PORT=3306
+      - DB_NAME=testhub
+      - DB_USER=root
+      - DB_PASSWORD=testhubadmin123
+      - REDIS_URL=redis://testhub-redis:6379/0
+      - TZ=Asia/Shanghai
+    volumes:
+      - /data/testhub/media:/app/media
+      - /data/testhub/logs:/app/logs
+    ports:
+      - "10001:10001"
+      - "6080:6080"
+      - "5900:5900"
+    networks:
+      - testhub-net
+  # ========== 定时任务调度器 ==========
+  testhub-scheduler:
+    image: testhub-backend:latest
+    container_name: testhub-scheduler
+    restart: always
+    command: python manage.py run_all_scheduled_tasks
+    depends_on:
+      testhub-mysql:
+        condition: service_healthy
+      testhub-redis:
+        condition: service_healthy
+    environment:
+      - DB_HOST=testhub-mysql
+      - DB_PORT=3306
+      - DB_NAME=testhub
+      - DB_USER=root
+      - DB_PASSWORD=testhubadmin123
+      - REDIS_URL=redis://testhub-redis:6379/0
+      - TZ=Asia/Shanghai
+    volumes:
+      - /data/testhub/media:/app/media
+      - /data/testhub/logs:/app/logs
+    networks:
+      - testhub-net
+  # ========== Celery Worker ==========
+  testhub-celery:
+    image: testhub-backend:latest
+    container_name: testhub-celery
+    restart: always
+    command: celery -A backend worker -l info
+    depends_on:
+      testhub-mysql:
+        condition: service_healthy
+      testhub-redis:
+        condition: service_healthy
+    environment:
+      - DB_HOST=testhub-mysql
+      - DB_PORT=3306
+      - DB_NAME=testhub
+      - DB_USER=root
+      - DB_PASSWORD=testhubadmin123
+      - REDIS_URL=redis://testhub-redis:6379/0
+      - TZ=Asia/Shanghai
+    volumes:
+      - /data/testhub/media:/app/media
+      - /data/testhub/logs:/app/logs
+    networks:
+      - testhub-net
+  # ========== 前端 Nginx ==========
+  testhub-frontend:
+    image: nginx:alpine
+    container_name: testhub-frontend
+    restart: always
+    depends_on:
+      - testhub-backend
+    ports:
+      - "9001:9001"
+    volumes:
+      - ./frontend/dist:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - testhub-net

@@ -273,6 +273,25 @@ class TestExecutor:
         print(f"准备执行 {len(test_cases_data)} 个测试用例")
 
         with sync_playwright() as p:
+            # 启动一个共享的浏览器与上下文：所有用例复用同一会话，登录态/cookie/token 跨用例保持
+            common_args = [
+                '--disable-blink-features=AutomationControlled',  # 避免被检测
+                '--ignore-certificate-errors',  # 忽略证书错误
+                '--allow-insecure-localhost',  # 允许不安全localhost
+                '--disable-web-security',  # 禁用web安全限制（跨域）
+            ]
+            if self.browser == 'firefox':
+                browser = p.firefox.launch(headless=self.headless, args=common_args)
+            elif self.browser == 'safari':
+                browser = p.webkit.launch(headless=self.headless, args=common_args)
+            else:  # chrome or edge
+                browser = p.chromium.launch(headless=self.headless, args=common_args)
+            self.context = browser.new_context(
+                viewport={'width': 1920, 'height': 1080},
+                user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+            )
+            print(f"✓ 浏览器已启动（共享会话，所有用例保持登录态）")
+
             for i, case_data in enumerate(test_cases_data, 1):
                 print(f"\n{'=' * 60}")
                 print(f"正在执行第 {i}/{len(test_cases_data)} 个用例: {case_data['name']}")
@@ -284,34 +303,8 @@ class TestExecutor:
                 case_execution.status = 'running'
                 case_execution.save()
 
-                # 为每个测试用例启动新的浏览器实例
+                # 每个用例复用共享的浏览器上下文，打开一个新标签页（保持登录态/会话）
                 try:
-                    # 公共浏览器参数
-                    common_args = [
-                        '--disable-blink-features=AutomationControlled',  # 避免被检测
-                        '--ignore-certificate-errors',  # 忽略证书错误
-                        '--allow-insecure-localhost',  # 允许不安全localhost
-                        '--disable-web-security',  # 禁用web安全限制（跨域）
-                    ]
-                    # 选择浏览器
-                    if self.browser == 'firefox':
-                        browser = p.firefox.launch(headless=self.headless, args=common_args)
-                    elif self.browser == 'safari':
-                        browser = p.webkit.launch(headless=self.headless, args=common_args)
-                    else:  # chrome or edge
-                        # 添加防检测参数
-                        browser = p.chromium.launch(
-                            headless=self.headless,
-                            args=common_args
-                        )
-
-                    print(f"✓ 浏览器已启动")
-
-                    # 配置上下文（User Agent 和 Viewport）
-                    self.context = browser.new_context(
-                        viewport={'width': 1920, 'height': 1080},
-                        user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
-                    )
                     self.current_page = self.context.new_page()
 
                     # 导航到项目基础URL
@@ -348,8 +341,6 @@ class TestExecutor:
                                 'screenshots': []
                             })
                             failed += 1
-                            browser.close()
-                            print(f"✓ 浏览器已关闭")
                             continue
 
                     # 执行测试用例（不再传递page参数，使用self.current_page）
@@ -404,14 +395,20 @@ class TestExecutor:
                     case_execution.save()
 
                 finally:
-                    # 确保每个用例执行后都关闭浏览器
+                    # 关闭当前用例的标签页（保留共享浏览器/上下文，保持登录态）
                     try:
-                        browser.close()
-                        print(f"✓ 浏览器已关闭\n")
+                        self.current_page.close()
                     except:
                         pass
 
         # 注意：每个用例的执行记录已在执行过程中实时更新，不需要在这里统一更新
+
+        # 所有用例执行完毕后，关闭共享浏览器
+        try:
+            browser.close()
+            print(f"✓ 浏览器已关闭（所有用例执行完毕）")
+        except:
+            pass
 
         duration = time.time() - start_time
         status = 'SUCCESS' if failed == 0 else 'FAILED'

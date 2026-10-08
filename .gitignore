@@ -80,8 +80,8 @@ frontend/*.log
 frontend/dist/
 
 # Docker
-Dockerfile*
-docker-compose*.yml
+#Dockerfile*
+#docker-compose*.yml
 .dockerignore
 nginx.conf
 Makefile

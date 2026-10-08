@@ -1,0 +1,55 @@
+FROM pw-python312-jdk17-playwright157-xvfb-novnc-cjk
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV TZ=Asia/Shanghai
+
+# 不需要 USER root，因为默认就是 root
+
+WORKDIR /app
+
+# 配置 pip 内网源
+
+RUN python -m pip config set global.index-url [http://10.210.57.104:8081/repository/pypi-group/simple/](http://10.210.57.104:8081/repository/pypi-group/simple/) 2>/dev/null || true
+RUN python -m pip config set global.trusted-host 10.210.57.104 2>/dev/null || true
+
+# 安装依赖（增加超时，避免 torch 下载超时）
+
+COPY requirements.txt .
+RUN python -m pip install --no-cache-dir --timeout 180 -r requirements.txt
+
+# 复制项目代码
+
+COPY . .
+
+# 创建目录（不需要 chown，因为 root 拥有所有权限）
+
+RUN mkdir -p 
+    /app/media/judge_rubrics 
+    /app/media/uploads 
+    /app/media/requirements 
+    /app/media/screenshots 
+    /app/media/videos 
+    /app/media/reports 
+    /app/media/app_automation 
+    /app/media/data_factory 
+    /app/logs 
+    /app/logs/celery 
+    /app/allure 
+    && chmod -R 755 /app/media /app/logs /app/allure
+RUN chmod +x manage.py
+RUN python manage.py collectstatic --noinput
+
+# 设置时区
+
+RUN ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+
+# 暴露端口
+
+EXPOSE 10001
+
+# 验证 Playwright 浏览器可用（root 用户，浏览器路径通常在 /root/.cache/ms-playwright）
+
+RUN python -c "from playwright.sync_api import sync_playwright; p = sync_playwright().start(); b = p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-dev-shm-usage']); print('✅ Playwright Browser OK'); b.close(); p.stop()"
+# 镜像自带 entrypoint（/usr/local/bin/docker-entrypoint.sh）会自动拉起 Xvfb/x11vnc/websockify(noVNC)，
+# 并最后 exec "$@" 执行本 CMD，因此这里只需直接运行后端即可
+CMD ["daphne", "-b", "0.0.0.0", "-p", "10001", "backend.asgi:application"]

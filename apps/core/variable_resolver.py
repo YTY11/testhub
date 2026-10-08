@@ -110,13 +110,13 @@ class VariableResolver:
             'get_next_runs': self._call_crontab_tool,
             'validate_expression': self._call_crontab_tool,
             
-            # 时间日期函数
-            'timestamp': self._timestamp,
-            'timestamp_sec': self._timestamp_sec,
-            'datetime': self._datetime,
-            'date': self._date,
-            'time': self._time,
-            'date_offset': self._date_offset,
+            # 时间日期函数（统一经适配器调用，兼容 ${date()} / ${date(%Y-%m-%d)}）
+            'timestamp': self._call_datetime_tool,
+            'timestamp_sec': self._call_datetime_tool,
+            'datetime': self._call_datetime_tool,
+            'date': self._call_datetime_tool,
+            'time': self._call_datetime_tool,
+            'date_offset': self._call_datetime_tool,
         }
     
     def resolve(self, text):
@@ -606,6 +606,27 @@ class VariableResolver:
         """
         dt = datetime.now() + timedelta(days=days, hours=hours, minutes=minutes)
         return dt.strftime(format_str)
+
+    def _call_datetime_tool(self, func_name, args):
+        """时间日期函数适配器：接收 (func_name, args)，与统一调用约定一致
+
+        Args:
+            func_name: 函数名（timestamp/timestamp_sec/datetime/date/time/date_offset）
+            args: 参数列表，如 ['%Y-%m-%d'] 或 []
+        """
+        if func_name == 'timestamp':
+            return self._timestamp()
+        if func_name == 'timestamp_sec':
+            return self._timestamp_sec()
+        if func_name == 'datetime':
+            return self._datetime(args[0]) if args and args[0] else self._datetime()
+        if func_name == 'date':
+            return self._date(args[0]) if args and args[0] else self._date()
+        if func_name == 'time':
+            return self._time(args[0]) if args and args[0] else self._time()
+        if func_name == 'date_offset':
+            return self._date_offset(*args) if args else self._date_offset()
+        raise ValueError(f"未知时间日期函数: {func_name}")
 
 
 # 创建全局解析器实例

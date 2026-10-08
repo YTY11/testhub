@@ -1037,8 +1037,17 @@ export default {
           }
 
         } catch (error) {
+          // 任务不存在（404，可能已被删除），停止轮询，避免持续报错
+          if (error.response && error.response.status === 404) {
+            clearInterval(this.pollInterval)
+            this.pollInterval = null
+            this.isGenerating = false
+            this.currentTaskId = null
+            console.log('ℹ️ 任务不存在或已被删除，停止轮询')
+            return
+          }
           console.error(this.$t('requirementAnalysis.checkProgressFailed'), error)
-          // 继续轮询，不中断
+          // 其他错误继续轮询
         }
       }, 3000) // 每3秒检查一次
     },

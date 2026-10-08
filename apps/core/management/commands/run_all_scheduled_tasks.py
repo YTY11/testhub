@@ -111,6 +111,10 @@ class Command(BaseCommand):
                     self.stdout.write(f"  [API] 执行任务: {task.name}")
                     self.stdout.write(f"       类型: {task.get_task_type_display() if hasattr(task, 'get_task_type_display') else task.task_type}, 触发方式: {task.get_trigger_type_display() if hasattr(task, 'get_trigger_type_display') else task.trigger_type}")
                     try:
+                        # 立即推进下次运行时间并保存，避免异步执行期间调度器在下一个周期重复触发同一任务（执行两遍）
+                        task.next_run_time = task.calculate_next_run()
+                        task.save()
+
                         # 创建执行日志
                         from apps.api_testing.models import TaskExecutionLog
                         execution_log = TaskExecutionLog.objects.create(

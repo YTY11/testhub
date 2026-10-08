@@ -24,7 +24,7 @@ class PassThroughRenderer(BaseRenderer):
 
 
 from rest_framework.parsers import MultiPartParser, FormParser
-from django.http import JsonResponse, StreamingHttpResponse
+from django.http import Http404, JsonResponse, StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.utils import timezone
@@ -1584,14 +1584,39 @@ class TestCaseGenerationTaskViewSet(viewsets.ModelViewSet):
                                         task.stream_position = 0
                                         task.save()
 
-                                        # 定义同步保存函数
+                                        # 定义同步保存函数（带数据库连接加固：清理过期连接 + 失败自动重连重试）
+                                        save_fail_count = [0]
+
                                         def save_stream_buffer(content):
-                                            """同步保存流式内容到数据库"""
-                                            task.stream_buffer = content
-                                            task.stream_position = len(content)
-                                            task.last_stream_update = timezone.now()
-                                            task.save(update_fields=['stream_buffer', 'stream_position',
-                                                                     'last_stream_update'])
+                                            """同步保存流式内容到数据库（连接失效时自动重连重试一次）"""
+                                            from django.db import close_old_connections, connection
+                                            try:
+                                                close_old_connections()
+                                                task.stream_buffer = content
+                                                task.stream_position = len(content)
+                                                task.last_stream_update = timezone.now()
+                                                task.save(update_fields=['stream_buffer', 'stream_position',
+                                                                         'last_stream_update'])
+                                                return True
+                                            except Exception:
+                                                # 长流式任务期间 MySQL 连接可能已失效（(0, '')），强制丢弃坏连接后重试一次
+                                                try:
+                                                    connection.close()
+                                                    close_old_connections()
+                                                    task.stream_buffer = content
+                                                    task.stream_position = len(content)
+                                                    task.last_stream_update = timezone.now()
+                                                    task.save(update_fields=['stream_buffer', 'stream_position',
+                                                                             'last_stream_update'])
+                                                    logger.warning("保存流式内容重连成功")
+                                                    return True
+                                                except Exception as e2:
+                                                    save_fail_count[0] += 1
+                                                    # 失败日志限流，避免刷屏拖垮服务
+                                                    if save_fail_count[0] == 1 or save_fail_count[0] % 50 == 0:
+                                                        logger.warning(
+                                                            f"保存流式内容失败(第{save_fail_count[0]}次): {e2}")
+                                                    return False
 
                                         # 转换为异步函数
                                         async_save_stream_buffer = sync_to_async(save_stream_buffer)
@@ -1603,12 +1628,9 @@ class TestCaseGenerationTaskViewSet(viewsets.ModelViewSet):
                                             task.stream_position = len(task.stream_buffer)
                                             task.last_stream_update = timezone.now()
 
-                                            # 每10个chunk或当chunk较大时保存一次
-                                            if task.stream_position % 500 < 20 or len(chunk) > 100:
-                                                try:
-                                                    await async_save_stream_buffer(task.stream_buffer)
-                                                except Exception as save_error:
-                                                    logger.warning(f"保存流式内容失败: {save_error}")
+                                            # 降低保存频率：每约1000字符或chunk较大时才落库一次，减轻数据库连接压力
+                                            if task.stream_position % 1000 < 50 or len(chunk) > 200:
+                                                await async_save_stream_buffer(task.stream_buffer)
 
                                         # 生成测试用例
                                         task.progress = 30
@@ -1984,6 +2006,12 @@ class TestCaseGenerationTaskViewSet(viewsets.ModelViewSet):
                 'completed_at': task.completed_at
             }, status=status.HTTP_200_OK)
 
+        except Http404:
+            # 任务不存在（可能已被删除），返回 404，前端据此停止轮询
+            return Response(
+                {'error': '任务不存在或已被删除'},
+                status=status.HTTP_404_NOT_FOUND
+            )
         except Exception as e:
             logger.error(f"获取任务进度时出错: {e}")
             return Response(
@@ -2068,7 +2096,7 @@ class TestCaseGenerationTaskViewSet(viewsets.ModelViewSet):
             last_final_length = 0  # 记录上次发送的最终用例长度
             last_status = ''  # 记录上次的任务状态
 
-            def event_stream():
+            async def event_stream():
                 nonlocal last_sent_position, loop_count, last_review_length, last_final_length, last_status
 
                 # Performance & Timeout Optimization
@@ -2088,15 +2116,15 @@ class TestCaseGenerationTaskViewSet(viewsets.ModelViewSet):
                         yield f"event: error\ndata: timeout\n\n"
                         break
 
-                    # 从数据库重新获取任务状态
+                    # 从数据库重新获取任务状态（async：走线程池，避免阻塞事件循环导致 Daphne 关闭挂起）
                     try:
-                        task.refresh_from_db()
+                        await sync_to_async(task.refresh_from_db)()
                     except TestCaseGenerationTask.DoesNotExist:
                         yield f"event: error\ndata: task_not_found\n\n"
                         break
                     except Exception as e:
                         logger.error(f"DB refresh failed: {e}")
-                        time.sleep(1)
+                        await asyncio.sleep(1)
                         continue
 
                     # 检测状态变化，如果进入revising阶段，重置last_final_length
@@ -2160,7 +2188,7 @@ class TestCaseGenerationTaskViewSet(viewsets.ModelViewSet):
                         logger.info(f"SSE流结束，总循环次数: {loop_count}")
 
                         # 添加短暂延迟，确保done信号被发送
-                        time.sleep(0.1)
+                        await asyncio.sleep(0.1)
                         break
 
                     # 如果是流式模式，发送新增的内容
@@ -2225,8 +2253,8 @@ class TestCaseGenerationTaskViewSet(viewsets.ModelViewSet):
                         yield ": keep-alive\n\n"
                         last_heartbeat_time = current_time
 
-                    # 减少休眠时间到 0.5s，提高响应速度
-                    time.sleep(0.5)
+                    # 减少休眠时间到 0.5s，提高响应速度（async 非阻塞，客户端断开时能被正确取消）
+                    await asyncio.sleep(0.5)
 
             # 返回SSE流式响应 - 使用更稳健的方式
             try:

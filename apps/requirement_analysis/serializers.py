@@ -261,6 +261,7 @@ class TestCaseGenerationTaskSerializer(serializers.ModelSerializer):
                  'reviewer_model_config', 'reviewer_model_name', 'writer_prompt_config', 'writer_prompt_name',
                  'reviewer_prompt_config', 'reviewer_prompt_name', 'generated_test_cases',
                  'review_feedback', 'final_test_cases', 'generation_log', 'error_message',
+                 'output_mode',
                  'created_by', 'created_by_name', 'created_at', 'updated_at', 'completed_at']
         read_only_fields = ['task_id', 'status', 'progress', 'generated_test_cases', 
                           'review_feedback', 'final_test_cases', 'generation_log', 
