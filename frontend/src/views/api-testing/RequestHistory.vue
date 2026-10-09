@@ -253,6 +253,12 @@ const loadHistory = async () => {
     const response = await api.get('/api-testing/histories/', { params })
     const data = response.data.results || response.data
 
+    // 分页越界回退：当前页无数据且不是第 1 页时，回退到上一页重新加载（删除末页数据后常见）
+    if ((!data || data.length === 0) && currentPage.value > 1) {
+      currentPage.value -= 1
+      return loadHistory()
+    }
+
     if (activeTab.value === 'HTTP') {
       httpHistory.value = data
     } else {
@@ -316,10 +322,12 @@ const clearHistory = async () => {
       }
     )
 
-    // 这里需要后端提供批量删除接口
-    // 目前先用批量删除当前页的方式模拟，或者需要后端增加清空接口
-    // 暂时提示未实现
-    ElMessage.warning(t('apiTesting.history.clearNotImplemented'))
+    // 调用后端清空接口（删除当前用户有权限的全部历史记录）
+    await api.delete('/api-testing/histories/clear/')
+    ElMessage.success('已清空全部历史记录')
+    currentPage.value = 1
+    selectedIds.value = []
+    loadHistory()
   } catch (error) {
     if (error !== 'cancel') {
       console.error(error)

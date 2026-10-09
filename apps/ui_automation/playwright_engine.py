@@ -269,7 +269,7 @@ class PlaywrightTestEngine:
             # openUrl：打开指定URL，相对路径自动拼接项目 base_url（登录后跳转其它页面）
             if action_type == 'openUrl':
                 raw = (resolved_input_value or '').strip()
-                if raw.startswith('http://') or raw.startswith('https://'):
+                if '://' in raw:
                     target_url = raw
                 elif self.base_url:
                     target_url = self.base_url.rstrip('/') + ('/' + raw.lstrip('/') if raw else '')

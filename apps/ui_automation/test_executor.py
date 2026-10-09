@@ -22,6 +22,7 @@ from .models import (
     TestCaseExecution, Element
 )
 from .variable_resolver import resolve_variables
+from .login_state import load_login_state, save_login_state, load_login_case
 
 
 class TestExecutor:
@@ -286,11 +287,75 @@ class TestExecutor:
                 browser = p.webkit.launch(headless=self.headless, args=common_args)
             else:  # chrome or edge
                 browser = p.chromium.launch(headless=self.headless, args=common_args)
-            self.context = browser.new_context(
-                viewport={'width': 1920, 'height': 1080},
-                user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
-            )
+            # 加载项目登录态文件（如有）：所有用例/套件自动复用已保存的登录会话
+            project = self.test_suite.project if getattr(self, 'test_suite', None) else None
+            login_state = load_login_state(project.id) if project is not None else None
+            context_kwargs = {
+                'viewport': {'width': 1920, 'height': 1080},
+                'user_agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+            }
+            if login_state:
+                context_kwargs['storage_state'] = login_state
+                print("✓ 已加载项目登录态，用例将自动复用登录会话")
+            self.context = browser.new_context(**context_kwargs)
             print(f"✓ 浏览器已启动（共享会话，所有用例保持登录态）")
+
+            # 自动执行"登录用例"获取登录会话（无头环境可用，无需人工操作浏览器）
+            login_case_id = load_login_case(project.id) if project is not None else None
+            if login_case_id and not login_state:
+                print("🔐 项目未保存有效登录态，自动执行登录用例获取登录会话...")
+                try:
+                    login_case = TestCase.objects.filter(id=login_case_id, project=project).first() if project else None
+                    if login_case:
+                        case_data = {
+                            'id': login_case.id,
+                            'name': login_case.name,
+                            'project_id': project.id,
+                            'steps': []
+                        }
+                        steps = login_case.steps.select_related('element', 'element__locator_strategy').order_by('step_number')
+                        for step in steps:
+                            step_data = {
+                                'id': step.id,
+                                'step_number': step.step_number,
+                                'action_type': step.action_type,
+                                'description': step.description,
+                                'input_value': step.input_value,
+                                'wait_time': step.wait_time,
+                                'assert_type': step.assert_type,
+                                'assert_value': step.assert_value,
+                                'element': None
+                            }
+                            if step.element:
+                                step_data['element'] = {
+                                    'id': step.element.id,
+                                    'name': step.element.name,
+                                    'locator_value': step.element.locator_value,
+                                    'locator_strategy': step.element.locator_strategy.name if step.element.locator_strategy else 'css'
+                                }
+                            case_data['steps'].append(step_data)
+                        login_page = self.context.new_page()
+                        self.current_page = login_page
+                        if project.base_url:
+                            try:
+                                login_page.goto(project.base_url, wait_until='networkidle', timeout=30000)
+                                time.sleep(2)
+                            except Exception as e:
+                                print(f"✗ 打开 base_url 失败: {e}")
+                        result = self.execute_test_case_playwright_no_db(case_data)
+                        if result and result.get('status') == 'passed':
+                            saved_state = self.context.storage_state()
+                            save_login_state(project.id, saved_state)
+                            print("✓ 登录用例执行完成，登录态已保存到项目文件")
+                        else:
+                            print("✗ 登录用例执行未通过，未保存登录态（受限页面可能跳转登录页）")
+                        login_page.close()
+                    else:
+                        print(f"⚠️ 配置的登录用例(ID={login_case_id})不存在，将按未登录会话执行")
+                except Exception as e:
+                    print(f"✗ 自动执行登录用例失败: {e}")
+            elif not login_state:
+                print("⚠️ 项目未配置登录用例，将按未登录会话执行（受限页面可能跳转登录页）")
 
             for i, case_data in enumerate(test_cases_data, 1):
                 print(f"\n{'=' * 60}")
@@ -1045,7 +1110,7 @@ class TestExecutor:
                     base = None
                     if getattr(self, 'test_suite', None):
                         base = getattr(getattr(self.test_suite, 'project', None), 'base_url', None)
-                    if raw.startswith('http://') or raw.startswith('https://'):
+                    if '://' in raw:
                         target = raw
                     elif base:
                         target = base.rstrip('/') + ('/' + raw.lstrip('/') if raw else '')
@@ -2384,7 +2449,7 @@ class TestExecutor:
                     base = None
                     if getattr(self, 'test_suite', None):
                         base = getattr(getattr(self.test_suite, 'project', None), 'base_url', None)
-                    if raw.startswith('http://') or raw.startswith('https://'):
+                    if '://' in raw:
                         target = raw
                     elif base:
                         target = base.rstrip('/') + ('/' + raw.lstrip('/') if raw else '')

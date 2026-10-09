@@ -3,6 +3,7 @@
     <!-- 顶部标题 -->
     <div class="header">
       <h3>{{ $t('apiTesting.notification.title') }}</h3>
+      <el-button type="danger" :disabled="selectedIds.length === 0" @click="handleBatchDelete">批量删除</el-button>
     </div>
 
     <!-- Tab页 -->
@@ -48,31 +49,29 @@
             :data="notifications"
             v-loading="loading"
             style="width: 100%"
+            @selection-change="handleSelectionChange"
           >
+            <el-table-column type="selection" width="55" align="center" />
             <el-table-column prop="task_name" :label="$t('apiTesting.notification.taskName')" min-width="120" />
-            <el-table-column prop="notify_time" :label="$t('apiTesting.notification.notifyTime')" min-width="140">
+            <el-table-column prop="created_at" :label="$t('apiTesting.notification.notifyTime')" min-width="140">
               <template #default="{ row }">
-                {{ formatDateTime(row.notify_time) }}
+                {{ formatDateTime(row.created_at || row.sent_at) }}
               </template>
             </el-table-column>
-            <el-table-column prop="recipients" :label="$t('apiTesting.notification.recipients')" min-width="120">
+            <el-table-column prop="notification_type_display" label="类型" width="100" />
+            <el-table-column prop="recipient_names" :label="$t('apiTesting.notification.recipients')" min-width="120">
               <template #default="{ row }">
-                <span v-if="row.notify_type === 'EMAIL'">
-                  {{ row.recipients.join(', ') }}
-                </span>
-                <span v-else-if="row.notify_type === 'WEBHOOK'">
-                  {{ $t('apiTesting.notification.webhookBot') }}
-                </span>
+                {{ (row.recipient_names && row.recipient_names.length) ? row.recipient_names.join(', ') : '—' }}
               </template>
             </el-table-column>
-            <el-table-column prop="status" :label="$t('apiTesting.common.status')" width="80">
+            <el-table-column prop="status_display" :label="$t('apiTesting.common.status')" width="100">
               <template #default="{ row }">
-                <el-tag :type="row.status === 'SUCCESS' ? 'success' : 'danger'">
-                  {{ row.status === 'SUCCESS' ? $t('apiTesting.common.success') : $t('apiTesting.common.failed') }}
+                <el-tag :type="(row.status_display || '').indexOf('成功') >= 0 ? 'success' : 'danger'">
+                  {{ row.status_display }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column :label="$t('apiTesting.common.operation')" width="100">
+            <el-table-column :label="$t('apiTesting.common.operation')" width="180">
               <template #default="{ row }">
                 <el-button
                   type="primary"
@@ -81,6 +80,7 @@
                 >
                   {{ $t('apiTesting.notification.viewDetail') }}
                 </el-button>
+                <el-button type="danger" size="small" @click="handleDelete(row)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -323,6 +323,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { Search, Refresh, Plus } from '@element-plus/icons-vue'
+import api from '@/utils/api'
 
 const { t } = useI18n()
 const activeTab = ref('list')
@@ -347,6 +348,41 @@ const pagination = reactive({
 // 通知列表数据
 const notifications = ref([])
 const currentNotification = ref(null)
+const selectedIds = ref([])
+
+const handleSelectionChange = (selection) => {
+  selectedIds.value = selection.map(item => item.id)
+}
+
+const handleDelete = (row) => {
+  ElMessageBox.confirm('确定删除该通知？', '提示', {
+    confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning'
+  }).then(async () => {
+    try {
+      await api.delete(`/api-testing/notification-logs/${row.id}/`)
+      ElMessage.success('删除成功')
+      loadNotifications()
+    } catch (error) {
+      ElMessage.error('删除失败')
+    }
+  }).catch(() => {})
+}
+
+const handleBatchDelete = () => {
+  if (selectedIds.value.length === 0) return
+  ElMessageBox.confirm(`确定删除选中的 ${selectedIds.value.length} 条通知？`, '提示', {
+    confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning'
+  }).then(async () => {
+    try {
+      await api.delete('/api-testing/notification-logs/batch-delete/', { data: { ids: selectedIds.value } })
+      ElMessage.success('批量删除成功')
+      selectedIds.value = []
+      loadNotifications()
+    } catch (error) {
+      ElMessage.error('批量删除失败')
+    }
+  }).catch(() => {})
+}
 
 // 邮箱配置
 const emailConfig = reactive({
@@ -375,30 +411,19 @@ const newWebhook = reactive({
 const loadNotifications = async () => {
   loading.value = true
   try {
-    // 模拟数据
-    notifications.value = [
-      {
-        id: 1,
-        task_name: '每日API测试',
-        notify_time: new Date().toISOString(),
-        notify_type: 'EMAIL',
-        recipients: ['user1@example.com', 'user2@example.com'],
-        status: 'SUCCESS',
-        content: '测试任务执行完成，共执行10个接口，成功8个，失败2个',
-        error_message: ''
-      },
-      {
-        id: 2,
-        task_name: '每周数据同步',
-        notify_time: new Date(Date.now() - 86400000).toISOString(),
-        notify_type: 'WEBHOOK',
-        recipients: [],
-        status: 'FAILED',
-        content: '数据同步任务执行失败',
-        error_message: '网络连接超时'
-      }
-    ]
-    pagination.total = 2
+    const params = {
+      page: pagination.current,
+      page_size: pagination.size
+    }
+    if (filters.task_name) params.search = filters.task_name
+    if (filters.date_range && filters.date_range.length === 2) {
+      params.start_date = filters.date_range[0]
+      params.end_date = filters.date_range[1]
+    }
+    const response = await api.get('/api-testing/notification-logs/', { params })
+    const data = response.data.results || response.data
+    notifications.value = data
+    pagination.total = response.data.count || data.length
   } catch (error) {
     ElMessage.error(t('apiTesting.messages.error.loadNotifications'))
   } finally {

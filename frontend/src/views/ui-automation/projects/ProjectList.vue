@@ -51,7 +51,7 @@
         <el-table-column prop="owner.username" :label="$t('uiAutomation.project.owner')" width="100" />
         <el-table-column prop="created_at" :label="$t('uiAutomation.common.createTime')" width="180" :formatter="formatDate" />
         <el-table-column prop="updated_at" :label="$t('uiAutomation.common.updateTime')" width="180" :formatter="formatDate" />
-        <el-table-column :label="$t('uiAutomation.common.operation')" width="180" fixed="right">
+        <el-table-column :label="$t('uiAutomation.common.operation')" width="300" fixed="right">
           <template #default="{ row }">
             <el-button size="small" type="primary" @click="goToProjectDetail(row.id)">
               <el-icon><View /></el-icon>
@@ -60,6 +60,12 @@
             <el-button v-if="row.can_manage" size="small" @click="editProject(row)">
               <el-icon><Edit /></el-icon>
               {{ $t('uiAutomation.common.edit') }}
+            </el-button>
+            <el-button v-if="row.can_manage" size="small" type="warning" @click="openSetLoginCase(row)">
+              设置登录用例
+            </el-button>
+            <el-button v-if="row.can_manage" size="small" @click="clearLoginState(row)">
+              清除登录态
             </el-button>
             <el-button v-if="row.can_manage" size="small" type="danger" @click="deleteProject(row.id)">
               <el-icon><Delete /></el-icon>
@@ -175,6 +181,29 @@
         </span>
       </template>
     </el-dialog>
+
+    <!-- 设置登录用例对话框 -->
+    <el-dialog v-model="showLoginCaseDialog" title="设置登录用例" width="560px">
+      <div v-if="loginCaseLoading" class="text-center" style="padding: 24px;">加载用例中...</div>
+      <el-form v-else label-width="80px">
+        <el-form-item label="说明">
+          <div style="font-size: 12px; color: #909399; line-height: 1.6;">
+            选择项目下一个包含"登录步骤"的用例。执行本项目任何用例/套件前，若登录态缺失或过期，引擎会自动执行该登录用例获取登录会话（服务器无头环境可用，无需人工操作浏览器），登录态保存到项目文件，供本项目所有用例自动复用。
+          </div>
+        </el-form-item>
+        <el-form-item label="登录用例">
+          <el-select v-model="loginCaseForm.test_case_id" placeholder="选择登录用例" style="width: 100%" filterable>
+            <el-option v-for="tc in loginCaseOptions" :key="tc.id" :label="tc.name" :value="tc.id" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="showLoginCaseDialog = false">{{ $t('uiAutomation.common.cancel') }}</el-button>
+          <el-button type="primary" :disabled="loginCaseLoading" @click="handleSetLoginCase">{{ $t('uiAutomation.common.confirm') }}</el-button>
+        </span>
+      </template>
+    </el-dialog>
     
     <!-- 项目详情弹框 -->
     <el-dialog v-model="showDetailDialog" :title="$t('uiAutomation.project.projectDetail')" width="600px">
@@ -212,6 +241,7 @@ import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search, View, Edit, Delete } from '@element-plus/icons-vue'
 import { getUiProjects, createUiProject, updateUiProject, deleteUiProject } from '@/api/ui_automation'
+import api from '@/utils/api'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -421,6 +451,70 @@ const deleteProject = async (id) => {
     if (error === 'cancel') return
     ElMessage.error(t('uiAutomation.project.messages.deleteFailed'))
     console.error('删除项目失败:', error)
+  }
+}
+
+// 设置登录用例：选择项目下一个包含登录步骤的用例，执行任何用例/套件前引擎自动先跑它获取会话
+const showLoginCaseDialog = ref(false)
+const loginCaseLoading = ref(false)
+const loginCaseOptions = ref([])
+const loginCaseForm = reactive({ test_case_id: null })
+const currentLoginCaseProject = ref(null)
+
+const openSetLoginCase = async (row) => {
+  currentLoginCaseProject.value = row
+  loginCaseForm.test_case_id = null
+  loginCaseOptions.value = []
+  showLoginCaseDialog.value = true
+  loginCaseLoading.value = true
+  try {
+    // 加载项目下用例
+    const casesRes = await api.get('/ui-automation/test-cases/', { params: { project: row.id, page_size: 1000 } })
+    loginCaseOptions.value = casesRes.data.results || casesRes.data || []
+    // 回显当前已配置的登录用例
+    const cfgRes = await api.get(`/ui-automation/projects/${row.id}/get-login-case/`)
+    if (cfgRes.data && cfgRes.data.test_case_id) {
+      loginCaseForm.test_case_id = cfgRes.data.test_case_id
+    }
+  } catch (error) {
+    ElMessage.error('加载用例失败')
+  } finally {
+    loginCaseLoading.value = false
+  }
+}
+
+const handleSetLoginCase = async () => {
+  if (!loginCaseForm.test_case_id) {
+    ElMessage.warning('请选择登录用例')
+    return
+  }
+  try {
+    const resp = await api.post(`/ui-automation/projects/${currentLoginCaseProject.value.id}/set-login-case/`, {
+      test_case_id: loginCaseForm.test_case_id
+    })
+    ElMessage.success(resp.data.detail || '登录用例设置成功')
+    showLoginCaseDialog.value = false
+  } catch (error) {
+    ElMessage.error(error.response?.data?.error || '设置登录用例失败')
+  }
+}
+
+// 清除项目已保存的登录态
+const clearLoginState = async (row) => {
+  try {
+    await ElMessageBox.confirm('确定清除该项目已保存的登录态？清除后用例将不再自动复用登录会话。', '清除登录态', {
+      confirmButtonText: '清除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+  } catch (e) {
+    return
+  }
+  try {
+    const resp = await api.post(`/ui-automation/projects/${row.id}/clear-login-state/`)
+    ElMessage.success(resp.data.detail || '已清除登录态')
+  } catch (error) {
+    ElMessage.error(error.response?.data?.error || '清除登录态失败')
   }
 }
 

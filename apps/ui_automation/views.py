@@ -161,6 +161,46 @@ class UiProjectViewSet(viewsets.ModelViewSet):
         log_operation('delete', 'project', instance.id, instance.name, self.request.user)
         instance.delete()
 
+    @action(detail=True, methods=['post'], url_path='set-login-case')
+    def set_login_case(self, request, pk=None):
+        """设置项目自动登录使用的"登录用例"。
+
+        引擎执行本项目任何用例/套件前，若登录态文件缺失或过期，会自动执行该登录用例
+        获取登录会话并写入项目登录态文件（无头环境可用，无需人工操作浏览器）。
+        配置存文件，不写数据库、不做迁移。
+        """
+        from .login_state import save_login_case as _save_case
+        project = self.get_object()
+        test_case_id = request.data.get('test_case_id')
+        if not test_case_id:
+            return Response({'error': '请提供 test_case_id'}, status=status.HTTP_400_BAD_REQUEST)
+        login_case = TestCase.objects.filter(id=test_case_id, project=project).first()
+        if not login_case:
+            return Response({'error': '登录用例不存在或不属于该项目'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        _save_case(project.id, test_case_id)
+        return Response({'detail': f'登录用例已设为：{login_case.name}', 'test_case_id': int(test_case_id)})
+
+    @action(detail=True, methods=['get'], url_path='get-login-case')
+    def get_login_case(self, request, pk=None):
+        """获取项目当前配置的登录用例 id。"""
+        from .login_state import load_login_case as _load_case
+        project = self.get_object()
+        return Response({'test_case_id': _load_case(project.id)})
+
+    @action(detail=True, methods=['post'], url_path='clear-login-state')
+    def clear_login_state(self, request, pk=None):
+        """清除项目已保存的登录态文件。"""
+        import os
+        from .login_state import clear_login_state as _clear_file
+        from .login_state import login_state_path
+        project = self.get_object()
+        path = login_state_path(project.id)
+        if path and os.path.exists(path):
+            _clear_file(project.id)
+            return Response({'detail': '已清除登录态'})
+        return Response({'detail': '该项目没有已保存的登录态'})
+
 
 class LocatorStrategyViewSet(viewsets.ModelViewSet):
     queryset = LocatorStrategy.objects.all()
@@ -1794,6 +1834,23 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                             else:
                                 execution_logs.append("警告: 测试用例没有定义任何步骤")
                                 return True
+
+                        except Exception as e:
+                            # 浏览器启动或执行过程中的未捕获异常：必须标记失败（否则默认 passed）
+                            import traceback
+                            tb_str = traceback.format_exc()
+                            execution_logs.append(f"✗ 执行失败: {str(e)}")
+                            execution_logs.append(f"[调试] 异常堆栈:\n{tb_str}")
+                            execution_result['status'] = 'failed'
+                            execution_result['error_message'] = f"执行失败: {str(e)}"
+                            detailed_errors.append({
+                                'step_number': 0,
+                                'action_type': '',
+                                'element': '',
+                                'message': '执行失败',
+                                'details': f"{str(e)}\n\n{tb_str}",
+                                'description': ''
+                            })
 
                         finally:
                             # 关闭浏览器

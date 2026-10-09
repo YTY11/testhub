@@ -500,6 +500,13 @@ class RequestHistoryViewSet(viewsets.ModelViewSet):
         
         return Response({'message': f'成功删除 {deleted_count} 条记录'})
 
+    @action(detail=False, methods=['delete'], url_path='clear')
+    def clear_all(self, request):
+        """清空请求历史（当前用户有权限的记录）"""
+        queryset = self.get_queryset()
+        deleted_count, _ = queryset.delete()
+        return Response({'message': f'成功清空 {deleted_count} 条历史记录'})
+
 
 class TestSuiteViewSet(viewsets.ModelViewSet):
     queryset = TestSuite.objects.all()
@@ -842,7 +849,24 @@ class TestExecutionViewSet(viewsets.ReadOnlyModelViewSet):
         ).select_related(
             'test_suite', 'test_suite__project', 'executed_by'
         ).distinct()
-    
+
+    def destroy(self, request, *args, **kwargs):
+        """删除单条测试执行记录（测试报告）"""
+        instance = self.get_object()
+        instance.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=False, methods=['delete'], url_path='batch-delete')
+    def batch_delete(self, request):
+        """批量删除测试执行记录（测试报告）"""
+        ids = request.data.get('ids', [])
+        if not ids:
+            return Response({'error': '未提供要删除的记录ID'}, status=status.HTTP_400_BAD_REQUEST)
+        queryset = self.get_queryset()
+        valid_ids = list(queryset.filter(id__in=ids).values_list('id', flat=True))
+        deleted_count, _ = TestExecution.objects.filter(id__in=valid_ids).delete()
+        return Response({'message': f'成功删除 {deleted_count} 条记录'})
+
     @action(detail=True, methods=['post'], url_path='generate-allure-report')
     def generate_allure_report(self, request, pk=None):
         """生成Allure报告数据"""
@@ -2178,7 +2202,24 @@ class NotificationLogViewSet(viewsets.ReadOnlyModelViewSet):
                 task__created_by=user
             )
         ).distinct()
-    
+
+    def destroy(self, request, *args, **kwargs):
+        """删除单条通知日志"""
+        instance = self.get_object()
+        instance.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=False, methods=['delete'], url_path='batch-delete')
+    def batch_delete(self, request):
+        """批量删除通知日志"""
+        ids = request.data.get('ids', [])
+        if not ids:
+            return Response({'error': '未提供要删除的记录ID'}, status=status.HTTP_400_BAD_REQUEST)
+        queryset = self.get_queryset()
+        valid_ids = list(queryset.filter(id__in=ids).values_list('id', flat=True))
+        deleted_count, _ = NotificationLog.objects.filter(id__in=valid_ids).delete()
+        return Response({'message': f'成功删除 {deleted_count} 条记录'})
+
     @action(detail=True, methods=['get'], url_path='detail')
     def get_notification_detail(self, request, pk=None):
         """获取通知详情"""

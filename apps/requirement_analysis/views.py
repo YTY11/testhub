@@ -2876,7 +2876,7 @@ class TestCaseGenerationTaskViewSet(viewsets.ModelViewSet):
             )
 
     def _parse_test_cases_content(self, content):
-        """解析测试用例内容 - 支持多种格式"""
+        """解析测试用例内容 - 支持 JSON 数组、表格、结构化文本多种格式"""
         if not content:
             return []
 
@@ -2887,12 +2887,80 @@ class TestCaseGenerationTaskViewSet(viewsets.ModelViewSet):
         logger.info(f"开始解析测试用例内容，内容长度: {len(clean_content)}")
         logger.info(f"内容前200字符: {clean_content[:200]}")
 
+        # 优先尝试 JSON 数组格式（AI 常输出 JSON）
+        json_cases = self._parse_json_format(clean_content)
+        if json_cases is not None:
+            return json_cases
+
         # 尝试表格格式解析
         if '|' in clean_content:
             return self._parse_table_format(clean_content)
 
         # 尝试结构化文本格式解析
         return self._parse_text_format(clean_content)
+
+    def _parse_json_format(self, content):
+        """尝试把内容解析为 JSON 数组的测试用例。
+
+        返回解析出的用例列表；若内容不是 JSON 数组则返回 None（交给其他格式解析器处理）。
+        """
+        import json
+        data = None
+        # 先尝试整体解析
+        try:
+            parsed = json.loads(content)
+            if isinstance(parsed, list):
+                data = parsed
+        except Exception:
+            data = None
+        # 若整体不是 JSON，尝试提取 [] 包裹的数组（兼容前后有说明文字或 markdown 代码块）
+        if data is None:
+            try:
+                m = re.search(r'\[[\s\S]*\]', content)
+                if m:
+                    parsed = json.loads(m.group(0))
+                    if isinstance(parsed, list):
+                        data = parsed
+            except Exception:
+                data = None
+        if data is None:
+            return None
+        cases = []
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            tc = self._normalize_case_fields(item)
+            if tc:
+                cases.append(tc)
+        return cases
+
+    def _normalize_case_fields(self, item):
+        """把 AI 输出的 JSON 用例字段归一化为内部字段（scenario/steps/expected/...）。"""
+        def first(*keys):
+            for k in keys:
+                v = item.get(k)
+                if v is not None and str(v).strip():
+                    return str(v).strip()
+            return ''
+        scenario = first('scenario', 'title', 'name', 'question', '场景', '标题', '名称', '测试目标')
+        steps = first('steps', 'testSteps', '步骤', '测试步骤', '操作步骤')
+        expected = first('reference_answer', 'expected', 'expected_result', 'expected_behavior',
+                         'answer', 'result', '预期', '预期结果', '预期行为')
+        precondition = first('precondition', '前置', '前提')
+        priority = first('priority', '优先级')
+        category = first('category', '分类')
+        if not scenario and not steps:
+            return None
+        if not scenario and category:
+            scenario = category
+        return {
+            'caseId': first('id', 'caseId', 'case_id', '编号', '序号'),
+            'scenario': scenario,
+            'precondition': precondition,
+            'steps': steps,
+            'expected': expected,
+            'priority': priority,
+        }
 
     def _parse_table_format(self, content):
         """解析表格格式的测试用例"""

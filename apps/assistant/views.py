@@ -75,14 +75,6 @@ class ChatViewSet(viewsets.ViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # 获取Dify配置
-        dify_config = DifyConfig.get_active_config()
-        if not dify_config:
-            return Response(
-                {'error': '未配置Dify API，请先在配置中心配置'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
         # 保存用户消息
         user_message = ChatMessage.objects.create(
             session=session,
@@ -90,7 +82,64 @@ class ChatViewSet(viewsets.ViewSet):
             content=message,
             conversation_id=session.conversation_id
         )
-        
+
+        # 优先使用 requirement_analysis 的活跃 AI 模型配置（OpenAI 兼容，支持本地/在线模型）
+        try:
+            from apps.requirement_analysis.models import AIModelConfig, AIModelService
+            active_config = AIModelConfig.objects.filter(is_active=True).order_by('-id').first()
+        except Exception:
+            active_config = None
+        if active_config:
+            try:
+                headers = AIModelService.get_openai_compatible_headers(active_config.api_key)
+                url = AIModelService.build_openai_compatible_url(active_config.base_url, '/chat/completions')
+                payload = {
+                    'model': active_config.model_name,
+                    'messages': [
+                        {'role': 'system', 'content': '你是TestHub的AI测试测评师，请专业、准确、简洁地回答软件测试相关问题。'},
+                        {'role': 'user', 'content': message}
+                    ],
+                    'max_tokens': active_config.max_tokens,
+                    'temperature': active_config.temperature,
+                    'top_p': active_config.top_p,
+                    'stream': False
+                }
+                resp = requests.post(url, headers=headers, json=payload, timeout=120)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    content = ''
+                    try:
+                        content = data['choices'][0]['message']['content']
+                    except Exception:
+                        content = data.get('answer', '')
+                    assistant_message = ChatMessage.objects.create(
+                        session=session,
+                        role='assistant',
+                        content=content or '',
+                        conversation_id=session.conversation_id
+                    )
+                    return Response({
+                        'user_message': ChatMessageSerializer(user_message).data,
+                        'assistant_message': ChatMessageSerializer(assistant_message).data,
+                        'conversation_id': session.conversation_id
+                    })
+                return Response({'error': f'AI模型API错误: {resp.status_code}', 'detail': resp.text},
+                                status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            except requests.exceptions.Timeout:
+                return Response({'error': 'AI模型API请求超时'}, status=status.HTTP_408_REQUEST_TIMEOUT)
+            except requests.exceptions.RequestException as e:
+                return Response({'error': f'AI模型API请求失败: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            except Exception as e:
+                return Response({'error': f'AI模型调用失败: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        # 回退：Dify 协议
+        dify_config = DifyConfig.get_active_config()
+        if not dify_config:
+            return Response(
+                {'error': '未配置Dify API，且未启用AI模型配置，请在配置中心配置'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         try:
             # 调用Dify API
             headers = {
