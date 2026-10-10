@@ -500,6 +500,9 @@ export default {
       // 去除markdown加粗标记 **text**，保留纯文本
       formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '$1')
 
+      // JSON 字符串中的字面量 \n（反斜杠n）还原为真实换行，再统一转 <br
+      formatted = formatted.replace(/\\n/g, '\n')
+
       // 转换换行符为<br>
       formatted = formatted.replace(/\n/g, '<br>')
 

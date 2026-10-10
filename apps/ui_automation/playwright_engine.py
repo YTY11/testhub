@@ -159,11 +159,14 @@ class PlaywrightTestEngine:
                 ]
             )
 
-            # 创建浏览器上下文
-            self.context = await self.browser.new_context(
-                viewport={'width': 1920, 'height': 1080},
-                user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
-            )
+            # 创建浏览器上下文（支持注入已保存的项目登录态，实现单用例登录态复用）
+            context_kwargs = {
+                'viewport': {'width': 1920, 'height': 1080},
+                'user_agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+            }
+            if getattr(self, 'storage_state', None):
+                context_kwargs['storage_state'] = self.storage_state
+            self.context = await self.browser.new_context(**context_kwargs)
 
             # 创建页面
             self.page = await self.context.new_page()

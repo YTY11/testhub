@@ -2903,36 +2903,67 @@ class TestCaseGenerationTaskViewSet(viewsets.ModelViewSet):
         """尝试把内容解析为 JSON 数组的测试用例。
 
         返回解析出的用例列表；若内容不是 JSON 数组则返回 None（交给其他格式解析器处理）。
+        三重兜底，兼容 AI 常见的：整体 JSON、JSON 后跟说明文字（尾注可含 ]）、markdown 代码块包裹、开头有说明文字。
         """
         import json
-        data = None
-        # 先尝试整体解析
+
+        def _norm(data):
+            cases = []
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+                tc = self._normalize_case_fields(item)
+                if tc:
+                    cases.append(tc)
+            return cases
+
+        # 1) 整体 JSON 解析
         try:
             parsed = json.loads(content)
             if isinstance(parsed, list):
-                data = parsed
+                return _norm(parsed)
         except Exception:
-            data = None
-        # 若整体不是 JSON，尝试提取 [] 包裹的数组（兼容前后有说明文字或 markdown 代码块）
-        if data is None:
-            try:
-                m = re.search(r'\[[\s\S]*\]', content)
-                if m:
-                    parsed = json.loads(m.group(0))
-                    if isinstance(parsed, list):
-                        data = parsed
-            except Exception:
-                data = None
-        if data is None:
-            return None
-        cases = []
-        for item in data:
-            if not isinstance(item, dict):
-                continue
-            tc = self._normalize_case_fields(item)
-            if tc:
-                cases.append(tc)
-        return cases
+            pass
+
+        # 2) raw_decode 从头解析：只解析第一个 JSON 值，自动忽略其后的任意说明文字（含尾注中的 ]）
+        try:
+            obj, _ = json.JSONDecoder().raw_decode(content)
+            if isinstance(obj, list):
+                return _norm(obj)
+        except Exception:
+            pass
+
+        # 3) 从第一个 [ 开始按平衡括号提取真正的数组（忽略字符串内部与尾注中的 [ ]），兼容开头有说明文字
+        start = content.find('[')
+        if start >= 0:
+            depth = 0
+            in_str = False
+            esc = False
+            for j in range(start, len(content)):
+                ch = content[j]
+                if in_str:
+                    if esc:
+                        esc = False
+                    elif ch == '\\':
+                        esc = True
+                    elif ch == '"':
+                        in_str = False
+                else:
+                    if ch == '"':
+                        in_str = True
+                    elif ch == '[':
+                        depth += 1
+                    elif ch == ']':
+                        depth -= 1
+                        if depth == 0:
+                            try:
+                                obj = json.loads(content[start:j + 1])
+                                if isinstance(obj, list):
+                                    return _norm(obj)
+                            except Exception:
+                                pass
+                            break
+        return None
 
     def _normalize_case_fields(self, item):
         """把 AI 输出的 JSON 用例字段归一化为内部字段（scenario/steps/expected/...）。"""

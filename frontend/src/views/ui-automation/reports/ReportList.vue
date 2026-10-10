@@ -234,6 +234,15 @@
               </div>
             </div>
           </div>
+          <!-- 执行截图（成功用例也展示，用于确认执行结果） -->
+          <div v-if="caseManualScreenshots.length > 0" class="screenshot-container" style="margin-top:16px">
+            <h4>执行截图</h4>
+            <div v-for="(screenshot, index) in caseManualScreenshots" :key="'sm' + index" class="screenshot-item">
+              <h5>{{ screenshot.description || `${$t('uiAutomation.report.screenshot')} ${index + 1}` }}</h5>
+              <img :src="screenshot.url" :alt="screenshot.description" class="screenshot-img" />
+              <p class="screenshot-time">{{ screenshot.timestamp }}</p>
+            </div>
+          </div>
         </div>
 
         <!-- 用例执行失败 - 显示执行日志、失败截图、错误信息三个tab -->

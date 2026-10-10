@@ -86,3 +86,7 @@ frontend/dist/
 nginx.conf
 Makefile
 build-multiplatform.sh
+
+# 忽略UI登录状态文件，但保留.gitkeep文件
+ui_login_states/*
+!ui_login_states/.gitkeep

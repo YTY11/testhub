@@ -372,28 +372,30 @@ class TestExecutor:
                 try:
                     self.current_page = self.context.new_page()
 
-                    # 导航到项目基础URL
+                    # 导航到项目基础URL（失败自动重试一次，规避瞬时网络波动）
                     if self.test_suite.project.base_url:
-                        try:
-                            print(f"正在导航到: {self.test_suite.project.base_url}")
-
-                            # 检测是否在Linux服务器环境
-                            import platform
-                            is_linux = platform.system() == 'Linux'
-
-                            # 使用 networkidle 等待页面加载完成
-                            self.current_page.goto(self.test_suite.project.base_url, wait_until='networkidle',
-                                                   timeout=30000)
-
-                            # 额外等待，确保动态内容加载（Vue/React等SPA应用）
-                            # 服务器无头模式需要更长的等待时间
-                            extra_wait = 3 if is_linux else 2
-                            time.sleep(extra_wait)
-
-                            print(
-                                f"✓ 成功导航到: {self.test_suite.project.base_url} (已等待页面加载完成，额外{extra_wait}秒)")
-                        except Exception as e:
-                            print(f"✗ 导航失败: {str(e)}")
+                        import platform
+                        is_linux = platform.system() == 'Linux'
+                        extra_wait = 3 if is_linux else 2
+                        nav_ok = False
+                        nav_error = None
+                        for _attempt in range(2):
+                            try:
+                                print(f"正在导航到: {self.test_suite.project.base_url} (第{_attempt+1}/2次)")
+                                self.current_page.goto(self.test_suite.project.base_url, wait_until='networkidle',
+                                                       timeout=30000)
+                                time.sleep(extra_wait)
+                                print(
+                                    f"✓ 成功导航到: {self.test_suite.project.base_url} (已等待页面加载完成，额外{extra_wait}秒)")
+                                nav_ok = True
+                                break
+                            except Exception as _e:
+                                nav_error = _e
+                                print(f"✗ 导航失败(第{_attempt+1}/2次): {str(_e)}")
+                                if _attempt == 0:
+                                    time.sleep(2)
+                        if not nav_ok:
+                            e = nav_error
                             # 导航失败，记录错误并继续下一个用例
                             self.results.append({
                                 'test_case_id': case_data['id'],
@@ -406,6 +408,15 @@ class TestExecutor:
                                 'screenshots': []
                             })
                             failed += 1
+                            # 同步更新该用例执行记录，避免状态停留在 running
+                            case_execution = case_executions[case_data['id']]
+                            case_execution.status = 'failed'
+                            case_execution.finished_at = timezone.now()
+                            case_execution.execution_time = (
+                                        case_execution.finished_at - case_execution.started_at).total_seconds()
+                            case_execution.execution_logs = '[]'
+                            case_execution.error_message = f"导航到基础URL失败: {str(e)}"
+                            case_execution.save()
                             continue
 
                     # 执行测试用例（不再传递page参数，使用self.current_page）
@@ -634,6 +645,22 @@ class TestExecutor:
                     'timestamp': datetime.now().isoformat(),
                     'error': str(screenshot_error)
                 })
+
+        # 成功用例自动补一张执行完成截图，便于在报告中确认执行结果
+        if result['status'] == 'passed':
+            try:
+                import base64
+                _b = self.current_page.screenshot(timeout=5000)
+                _b64 = base64.b64encode(_b).decode('utf-8')
+                if len(_b64) >= 100:
+                    result['screenshots'].append({
+                        'url': f'data:image/png;base64,{_b64}',
+                        'description': '执行完成截图（成功）',
+                        'step_number': None,
+                        'timestamp': datetime.now().isoformat()
+                    })
+            except Exception:
+                pass
 
         result['end_time'] = datetime.now().isoformat()
         return result
@@ -1003,24 +1030,24 @@ class TestExecutor:
 
                                 # 使用更长的超时时间（至少10秒）
                                 extended_timeout = max(step_data['wait_time'], 10000)
-                                self.current_page.click(selector, timeout=extended_timeout)
+                                self._locate_playwright(selector).click(timeout=extended_timeout)
                                 print(f"  ✓ 点击成功（超时: {extended_timeout}ms）")
                             else:
-                                self.current_page.click(selector, timeout=step_data['wait_time'])
+                                self._locate_playwright(selector).click(timeout=step_data['wait_time'])
                             step_result['success'] = True
 
                 elif step_data['action_type'] == 'fill':
                     # 解析输入值中的变量表达式
                     resolved_value = resolve_variables(step_data['input_value'])
 
-                    # 如果刚切换了标签页，增加超时时间
+                    # 超时兜底至少5秒，避免 SPA/iframe 就绪不足导致误超时
+                    timeout_ms = max(step_data['wait_time'] or 0, 5000)
                     if step_data.get('_just_switched_tab'):
                         # 确保页面保持在前台
                         self.current_page.bring_to_front()
-                        extended_timeout = max(step_data['wait_time'], 10000)
-                        self.current_page.fill(selector, resolved_value, timeout=extended_timeout)
-                    else:
-                        self.current_page.fill(selector, resolved_value, timeout=step_data['wait_time'])
+                        timeout_ms = max(timeout_ms, 10000)
+                    # 用 _locate_playwright 定位：主 frame 找不到时自动遍历 iframe 兜底
+                    self._locate_playwright(selector).fill(resolved_value, timeout=timeout_ms)
 
                     step_result['success'] = True
                     # 记录解析后的值（用于调试）
@@ -1584,35 +1611,36 @@ class TestExecutor:
                         print(f"⚠️  清理浏览器状态失败: {str(clean_error)}，继续执行...")
                         pass  # 如果清理失败，继续执行
 
-                # 导航到项目基础URL
+                # 导航到项目基础URL（失败自动重试一次，规避瞬时网络波动）
                 if self.test_suite.project.base_url:
-                    try:
-                        print(f"正在导航到: {self.test_suite.project.base_url}")
-
-                        # 检测是否在Linux服务器环境
-                        import platform
-                        is_linux = platform.system() == 'Linux'
-
-                        # 导航到URL
-                        driver.get(self.test_suite.project.base_url)
-
-                        # 等待页面基本加载完成
-                        # 在服务器环境（特别是无头模式）需要更长的等待时间
+                    import platform
+                    is_linux = platform.system() == 'Linux'
+                    extra_wait = 3 if is_linux else 2
+                    nav_ok = False
+                    nav_error = None
+                    for _attempt in range(2):
                         try:
-                            WebDriverWait(driver, 15 if is_linux else 10).until(
-                                lambda d: d.execute_script("return document.readyState") == "complete"
-                            )
-                        except:
-                            pass  # 即使超时也继续执行
-
-                        # 额外等待，确保动态内容加载（Vue/React等SPA应用）
-                        extra_wait = 3 if is_linux else 2
-                        time.sleep(extra_wait)
-
-                        print(
-                            f"✓ 成功导航到: {self.test_suite.project.base_url} (已等待页面加载完成，额外{extra_wait}秒)")
-                    except Exception as e:
-                        print(f"✗ 导航失败: {str(e)}")
+                            print(f"正在导航到: {self.test_suite.project.base_url} (第{_attempt+1}/2次)")
+                            driver.get(self.test_suite.project.base_url)
+                            # 等待页面基本加载完成
+                            try:
+                                WebDriverWait(driver, 15 if is_linux else 10).until(
+                                    lambda d: d.execute_script("return document.readyState") == "complete"
+                                )
+                            except:
+                                pass  # 即使超时也继续执行
+                            time.sleep(extra_wait)
+                            print(
+                                f"✓ 成功导航到: {self.test_suite.project.base_url} (已等待页面加载完成，额外{extra_wait}秒)")
+                            nav_ok = True
+                            break
+                        except Exception as _e:
+                            nav_error = _e
+                            print(f"✗ 导航失败(第{_attempt+1}/2次): {str(_e)}")
+                            if _attempt == 0:
+                                time.sleep(2)
+                    if not nav_ok:
+                        e = nav_error
                         # 导航失败，记录错误并继续下一个用例
                         self.results.append({
                             'test_case_id': case_data['id'],
@@ -1625,6 +1653,15 @@ class TestExecutor:
                             'screenshots': []
                         })
                         failed += 1
+                        # 同步更新该用例执行记录，避免状态停留在 running
+                        case_execution = case_executions[case_data['id']]
+                        case_execution.status = 'failed'
+                        case_execution.finished_at = timezone.now()
+                        case_execution.execution_time = (
+                                    case_execution.finished_at - case_execution.started_at).total_seconds()
+                        case_execution.execution_logs = '[]'
+                        case_execution.error_message = f"导航到基础URL失败: {str(e)}"
+                        case_execution.save()
                         continue
 
                 # 执行测试用例
@@ -1968,6 +2005,22 @@ class TestExecutor:
                 })
             except Exception as screenshot_error:
                 print(f"捕获异常截图失败: {str(screenshot_error)}")
+
+        # 成功用例自动补一张执行完成截图，便于在报告中确认执行结果
+        if result['status'] == 'passed':
+            try:
+                import base64
+                _b = driver.get_screenshot_as_png()
+                _b64 = base64.b64encode(_b).decode('utf-8')
+                if len(_b64) >= 100:
+                    result['screenshots'].append({
+                        'url': f'data:image/png;base64,{_b64}',
+                        'description': '执行完成截图（成功）',
+                        'step_number': None,
+                        'timestamp': datetime.now().isoformat()
+                    })
+            except Exception:
+                pass
 
         result['end_time'] = datetime.now().isoformat()
         return result

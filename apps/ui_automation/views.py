@@ -1659,6 +1659,57 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                         engine = PlaywrightTestEngine(browser_type=browser_type, headless=headless)
                         engine.base_url = test_case.project.base_url
 
+                        # 项目级登录态共享：已保存登录态直接注入；未保存且配置了登录用例则自动执行获取会话（无头可用）
+                        try:
+                            from .login_state import load_login_state, save_login_state, load_login_case
+                            from apps.ui_automation.models import TestCase as UiTestCase
+                            from asgiref.sync import sync_to_async
+                            project = test_case.project
+                            login_state = load_login_state(project.id)
+                            if not login_state:
+                                login_case_id = load_login_case(project.id)
+                                if login_case_id:
+                                    login_case = await sync_to_async(
+                                        UiTestCase.objects.filter(id=login_case_id, project=project).first)()
+                                    if login_case:
+                                        execution_logs.append("🔐 项目未保存有效登录态，自动执行登录用例获取登录会话...")
+                                        le = PlaywrightTestEngine(browser_type=browser_type, headless=True)
+                                        le.base_url = project.base_url
+                                        await le.start()
+                                        try:
+                                            if project.base_url:
+                                                await le.navigate(project.base_url)
+                                            lsteps = await sync_to_async(lambda: list(
+                                                login_case.steps.select_related(
+                                                    'element', 'element__locator_strategy').order_by('step_number')))()
+                                            ok = True
+                                            for lst in lsteps:
+                                                elem = None
+                                                if lst.element:
+                                                    elem = {'name': lst.element.name,
+                                                            'locator_value': lst.element.locator_value,
+                                                            'locator_strategy': lst.element.locator_strategy.name if lst.element.locator_strategy else 'css'}
+                                                try:
+                                                    s_ok, _, _ = await le.execute_step(lst, elem or {})
+                                                except Exception:
+                                                    s_ok = False
+                                                if not s_ok:
+                                                    ok = False
+                                                    break
+                                            if ok:
+                                                saved = await le.context.storage_state()
+                                                save_login_state(project.id, saved)
+                                                login_state = saved
+                                                execution_logs.append("✓ 登录用例执行完成，登录态已保存到项目文件")
+                                            else:
+                                                execution_logs.append("✗ 登录用例步骤执行未全部通过，未保存登录态")
+                                        finally:
+                                            await le.stop()
+                            engine.storage_state = login_state
+                        except Exception as _le:
+                            execution_logs.append(f"⚠️ 加载项目登录态失败: {_le}")
+
+
                         try:
                             # 启动浏览器
                             execution_logs.append("========== 初始化浏览器 ==========")

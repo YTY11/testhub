@@ -1255,6 +1255,10 @@ export default {
       // 行内代码 `code`
       html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
 
+      // JSON 字符串中的字面量 \n（反斜杠n）转为真实换行，再统一转 <br
+      // （AI 输出 JSON 时 steps/expected 等字段用转义的 \n 表示换行，需先还原成真实换行）
+      html = html.replace(/\\n/g, '\n');
+
       // 换行符转换为<br>
       html = html.replace(/\n/g, '<br>');
 

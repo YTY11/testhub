@@ -237,11 +237,11 @@
           </div>
           <div class="detail-item">
             <label>{{ $t('generatedTestCases.testSteps') }}</label>
-            <p class="test-steps" v-html="selectedTestCaseDetail.test_steps"></p>
+            <p class="test-steps" v-html="formatSteps(selectedTestCaseDetail.test_steps)"></p>
           </div>
           <div class="detail-item">
             <label>{{ $t('generatedTestCases.expectedResult') }}</label>
-            <p v-html="selectedTestCaseDetail.expected_result"></p>
+            <p v-html="formatSteps(selectedTestCaseDetail.expected_result)"></p>
           </div>
           <div class="detail-item" v-if="selectedTestCaseDetail.review_comments">
             <label>{{ $t('generatedTestCases.reviewComments') }}</label>
@@ -751,6 +751,17 @@ export default {
         hour: '2-digit',
         minute: '2-digit'
       })
+    },
+
+    // 格式化用例步骤/预期文本：转义HTML并把换行（含 JSON 字面量 \n）转为 <br>
+    formatSteps(text) {
+      if (!text) return ''
+      return text
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/\\n/g, '<br>')
+          .replace(/\n/g, '<br>')
     },
 
     // 获取项目列表
