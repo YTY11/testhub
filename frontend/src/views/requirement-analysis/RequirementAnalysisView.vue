@@ -1075,30 +1075,35 @@ export default {
         // 过滤掉总结和建议部分，只保留测试用例内容
         const filteredContent = this.filterTestCasesOnly(finalTestCases);
 
-        // 尝试解析表格格式的测试用例（参考AutoGenTestCase的做法）
-        const tableFormat = this.parseTableFormat(filteredContent);
-
         let worksheetData = [];
 
-        if (tableFormat.length > 0) {
-          // 如果解析到表格格式，直接使用，但要确保表头正确
-          worksheetData = tableFormat;
+        // 优先解析 JSON 数组格式（AI 现在输出 JSON，避免整段 JSON 落到一个单元格）
+        worksheetData = this.parseJsonFormat(filteredContent);
 
-          // 检查并修正表头
-          if (worksheetData.length > 0) {
-            const header = worksheetData[0];
-            for (let i = 0; i < header.length; i++) {
-              if (header[i] && header[i].includes('测试步骤')) {
-                header[i] = header[i].replace('测试步骤', '操作步骤');
-              }
-              if (header[i] && header[i].includes('Test Steps')) {
-                header[i] = header[i].replace('Test Steps', '操作步骤');
+        if (worksheetData.length === 0) {
+          // 尝试解析表格格式的测试用例（参考AutoGenTestCase的做法）
+          const tableFormat = this.parseTableFormat(filteredContent);
+
+          if (tableFormat.length > 0) {
+            // 如果解析到表格格式，直接使用，但要确保表头正确
+            worksheetData = tableFormat;
+
+            // 检查并修正表头
+            if (worksheetData.length > 0) {
+              const header = worksheetData[0];
+              for (let i = 0; i < header.length; i++) {
+                if (header[i] && header[i].includes('测试步骤')) {
+                  header[i] = header[i].replace('测试步骤', '操作步骤');
+                }
+                if (header[i] && header[i].includes('Test Steps')) {
+                  header[i] = header[i].replace('Test Steps', '操作步骤');
+                }
               }
             }
+          } else {
+            // 否则尝试解析结构化格式
+            worksheetData = this.parseStructuredFormat(filteredContent);
           }
-        } else {
-          // 否则尝试解析结构化格式
-          worksheetData = this.parseStructuredFormat(filteredContent);
         }
 
         // 将所有单元格中的<br>标签转换为换行符
@@ -1299,6 +1304,75 @@ export default {
       }
 
       return filteredLines.join('\n');
+    },
+
+    // 解析 JSON 数组格式的测试用例（AI 现在输出 JSON），拆成表格行列
+    parseJsonFormat(content) {
+      if (!content) return [];
+
+      const text = content.trim();
+      let arr = null;
+
+      // 1) 整体解析
+      try {
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed)) arr = parsed;
+      } catch (e) { /* 继续尝试 */ }
+
+      // 2) 从第一个 [ 按平衡括号提取（兼容开头有说明文字 / 尾注含 ]）
+      if (!arr) {
+        const start = text.indexOf('[');
+        if (start >= 0) {
+          let depth = 0, inStr = false, esc = false;
+          for (let j = start; j < text.length; j++) {
+            const ch = text[j];
+            if (inStr) {
+              if (esc) esc = false;
+              else if (ch === '\\') esc = true;
+              else if (ch === '"') inStr = false;
+            } else {
+              if (ch === '"') inStr = true;
+              else if (ch === '[') depth++;
+              else if (ch === ']') {
+                depth--;
+                if (depth === 0) {
+                  try {
+                    const parsed = JSON.parse(text.slice(start, j + 1));
+                    if (Array.isArray(parsed)) arr = parsed;
+                  } catch (e2) { /* 忽略 */ }
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      if (!arr) return [];
+
+      const rows = [];
+      rows.push([
+        this.$t('requirementAnalysis.excelTestCaseNumber'),
+        this.$t('requirementAnalysis.excelTestScenario'),
+        this.$t('requirementAnalysis.excelPrecondition'),
+        this.$t('requirementAnalysis.excelTestSteps'),
+        this.$t('requirementAnalysis.excelExpectedResult'),
+        this.$t('requirementAnalysis.excelPriority')
+      ]);
+
+      arr.forEach((item, index) => {
+        if (!item || typeof item !== 'object') return;
+        rows.push([
+          item.id || item.caseId || `TC${String(index + 1).padStart(3, '0')}`,
+          item.scenario || item.title || '',
+          item.precondition || '',
+          this.convertBrToNewline(item.steps || ''),
+          this.convertBrToNewline(item.expected || item.reference_answer || ''),
+          item.priority || '中'
+        ]);
+      });
+
+      return rows;
     },
 
     // 解析表格格式的测试用例（参考AutoGenTestCase的做法）

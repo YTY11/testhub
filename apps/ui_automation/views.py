@@ -1660,54 +1660,62 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                         engine.base_url = test_case.project.base_url
 
                         # 项目级登录态共享：已保存登录态直接注入；未保存且配置了登录用例则自动执行获取会话（无头可用）
-                        try:
-                            from .login_state import load_login_state, save_login_state, load_login_case
-                            from apps.ui_automation.models import TestCase as UiTestCase
-                            from asgiref.sync import sync_to_async
-                            project = test_case.project
-                            login_state = load_login_state(project.id)
-                            if not login_state:
-                                login_case_id = load_login_case(project.id)
-                                if login_case_id:
-                                    login_case = await sync_to_async(
-                                        UiTestCase.objects.filter(id=login_case_id, project=project).first)()
-                                    if login_case:
-                                        execution_logs.append("🔐 项目未保存有效登录态，自动执行登录用例获取登录会话...")
-                                        le = PlaywrightTestEngine(browser_type=browser_type, headless=True)
-                                        le.base_url = project.base_url
-                                        await le.start()
-                                        try:
-                                            if project.base_url:
-                                                await le.navigate(project.base_url)
-                                            lsteps = await sync_to_async(lambda: list(
-                                                login_case.steps.select_related(
-                                                    'element', 'element__locator_strategy').order_by('step_number')))()
-                                            ok = True
-                                            for lst in lsteps:
-                                                elem = None
-                                                if lst.element:
-                                                    elem = {'name': lst.element.name,
-                                                            'locator_value': lst.element.locator_value,
-                                                            'locator_strategy': lst.element.locator_strategy.name if lst.element.locator_strategy else 'css'}
-                                                try:
-                                                    s_ok, _, _ = await le.execute_step(lst, elem or {})
-                                                except Exception:
-                                                    s_ok = False
-                                                if not s_ok:
-                                                    ok = False
-                                                    break
-                                            if ok:
-                                                saved = await le.context.storage_state()
-                                                save_login_state(project.id, saved)
-                                                login_state = saved
-                                                execution_logs.append("✓ 登录用例执行完成，登录态已保存到项目文件")
-                                            else:
-                                                execution_logs.append("✗ 登录用例步骤执行未全部通过，未保存登录态")
-                                        finally:
-                                            await le.stop()
-                            engine.storage_state = login_state
-                        except Exception as _le:
-                            execution_logs.append(f"⚠️ 加载项目登录态失败: {_le}")
+                        # 但执行"登录用例"本身时跳过登录态共享，让登录步骤正常执行（否则已登录态会让登录页元素找不到）
+                        current_login_case_id = None
+                        if test_case.project_id:
+                            from .login_state import load_login_case as _load_case
+                            current_login_case_id = _load_case(test_case.project_id)
+                        is_login_case_itself = current_login_case_id and int(test_case.id) == int(current_login_case_id)
+
+                        if not is_login_case_itself:
+                            try:
+                                from .login_state import load_login_state, save_login_state, load_login_case
+                                from apps.ui_automation.models import TestCase as UiTestCase
+                                from asgiref.sync import sync_to_async
+                                project = test_case.project
+                                login_state = load_login_state(project.id)
+                                if not login_state:
+                                    login_case_id = load_login_case(project.id)
+                                    if login_case_id:
+                                        login_case = await sync_to_async(
+                                            UiTestCase.objects.filter(id=login_case_id, project=project).first)()
+                                        if login_case:
+                                            execution_logs.append("🔐 项目未保存有效登录态，自动执行登录用例获取登录会话...")
+                                            le = PlaywrightTestEngine(browser_type=browser_type, headless=True)
+                                            le.base_url = project.base_url
+                                            await le.start()
+                                            try:
+                                                if project.base_url:
+                                                    await le.navigate(project.base_url)
+                                                lsteps = await sync_to_async(lambda: list(
+                                                    login_case.steps.select_related(
+                                                        'element', 'element__locator_strategy').order_by('step_number')))()
+                                                ok = True
+                                                for lst in lsteps:
+                                                    elem = None
+                                                    if lst.element:
+                                                        elem = {'name': lst.element.name,
+                                                                'locator_value': lst.element.locator_value,
+                                                                'locator_strategy': lst.element.locator_strategy.name if lst.element.locator_strategy else 'css'}
+                                                    try:
+                                                        s_ok, _, _ = await le.execute_step(lst, elem or {})
+                                                    except Exception:
+                                                        s_ok = False
+                                                    if not s_ok:
+                                                        ok = False
+                                                        break
+                                                if ok:
+                                                    saved = await le.context.storage_state()
+                                                    save_login_state(project.id, saved)
+                                                    login_state = saved
+                                                    execution_logs.append("✓ 登录用例执行完成，登录态已保存到项目文件")
+                                                else:
+                                                    execution_logs.append("✗ 登录用例步骤执行未全部通过，未保存登录态")
+                                            finally:
+                                                await le.stop()
+                                engine.storage_state = login_state
+                            except Exception as _le:
+                                execution_logs.append(f"⚠️ 加载项目登录态失败: {_le}")
 
 
                         try:
@@ -3221,9 +3229,22 @@ class AICaseViewSet(viewsets.ModelViewSet):
                         total_tasks = len(execution_record.planned_tasks)
                         completed_tasks = len(
                             [t for t in execution_record.planned_tasks if t.get('status') == 'completed'])
-                        pending_tasks = len([t for t in execution_record.planned_tasks if t.get('status') == 'pending'])
+                        pending_tasks = len(
+                            [t for t in execution_record.planned_tasks if t.get('status') in ('pending', 'in_progress')])
                         logger.info(
                             f"🏁 Task completion summary: {completed_tasks}/{total_tasks} tasks completed, {pending_tasks} pending")
+
+                        # AI 未执行（任务结束后仍为 pending/in_progress）的步骤收尾为失败，避免永久悬空、执行记录误报成功
+                        if pending_tasks > 0:
+                            unexecuted = [t for t in execution_record.planned_tasks
+                                          if t.get('status') in ('pending', 'in_progress')]
+                            for t in unexecuted:
+                                t['status'] = 'failed'
+                                t.setdefault('note', 'AI 未执行该步骤（未收到 mark_task_complete）')
+                            execution_record.status = 'failed'
+                            execution_record.logs += (
+                                f"\n检测到 {pending_tasks} 个步骤未被 AI 执行，已标记为失败："
+                                + "、".join(str(t.get('name', t.get('id', '?'))) for t in unexecuted))
 
                 execution_record.end_time = timezone.now()
                 execution_record.duration = (execution_record.end_time - execution_record.start_time).total_seconds()
@@ -3765,9 +3786,22 @@ class AIExecutionRecordViewSet(viewsets.ModelViewSet):
                         total_tasks = len(execution_record.planned_tasks)
                         completed_tasks = len(
                             [t for t in execution_record.planned_tasks if t.get('status') == 'completed'])
-                        pending_tasks = len([t for t in execution_record.planned_tasks if t.get('status') == 'pending'])
+                        pending_tasks = len(
+                            [t for t in execution_record.planned_tasks if t.get('status') in ('pending', 'in_progress')])
                         logger.info(
                             f"🏁 Task completion summary: {completed_tasks}/{total_tasks} tasks completed, {pending_tasks} pending")
+
+                        # AI 未执行（任务结束后仍为 pending/in_progress）的步骤收尾为失败，避免永久悬空、执行记录误报成功
+                        if pending_tasks > 0:
+                            unexecuted = [t for t in execution_record.planned_tasks
+                                          if t.get('status') in ('pending', 'in_progress')]
+                            for t in unexecuted:
+                                t['status'] = 'failed'
+                                t.setdefault('note', 'AI 未执行该步骤（未收到 mark_task_complete）')
+                            execution_record.status = 'failed'
+                            execution_record.logs += (
+                                f"\n检测到 {pending_tasks} 个步骤未被 AI 执行，已标记为失败："
+                                + "、".join(str(t.get('name', t.get('id', '?'))) for t in unexecuted))
 
                 execution_record.end_time = timezone.now()
                 execution_record.duration = (execution_record.end_time - execution_record.start_time).total_seconds()

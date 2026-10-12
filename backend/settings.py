@@ -212,7 +212,7 @@ from datetime import timedelta
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),  # access_token 60分钟
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),  # refresh_token 7天
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),  # refresh_token 30天（延长，减少"隔几天刷新就被登出"）
     'ROTATE_REFRESH_TOKENS': False,  # 关闭轮换：避免多标签页刷新竞态导致"莫名自动退出"
     'BLACKLIST_AFTER_ROTATION': False,  # 无需轮换，则无需黑名单
     'UPDATE_LAST_LOGIN': True,  # 更新最后登录时间

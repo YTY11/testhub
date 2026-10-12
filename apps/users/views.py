@@ -71,17 +71,11 @@ def login_view(request):
 @api_view(['POST'])
 @csrf_exempt
 def logout_view(request):
-    """用户退出登录，将refresh token加入黑名单"""
+    """用户退出登录"""
+    # 关闭JWT轮换后，多标签页/并发刷新场景下若手动 blacklist refresh token，
+    # 会把共享的 refresh 置为失效，导致其他标签页或后续刷新页 refresh 返回400被登出。
+    # 因此退出时不再主动黑名单 refresh，仅清除服务端会话状态。
     if request.user.is_authenticated:
-        # 将 refresh token 加入黑名单
-        refresh_token = request.data.get('refresh')
-        if refresh_token:
-            try:
-                from rest_framework_simplejwt.tokens import RefreshToken as JWTRefreshToken
-                JWTRefreshToken(refresh_token).blacklist()
-            except Exception:
-                pass
-
         logout(request)
 
     return Response({'message': '退出成功'})

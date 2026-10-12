@@ -1644,6 +1644,21 @@ class TestCaseGenerationTaskViewSet(viewsets.ModelViewSet):
                                         if task.stream_buffer:
                                             save_stream_buffer(task.stream_buffer)
 
+                                        # 校验生成结果能否解析出用例；若 0 条，用强化提示词重试一次（应对模型短输出/格式不符）
+                                        if not self._parse_test_cases_content(generated_cases):
+                                            logger.warning(
+                                                f"任务 {task.task_id} 首次生成解析出 0 条，使用强化提示词重试生成")
+                                            # 清空流式缓冲，避免新旧内容叠加
+                                            task.stream_buffer = ''
+                                            task.stream_position = 0
+                                            task.save(update_fields=['stream_buffer', 'stream_position'])
+                                            generated_cases = loop.run_until_complete(
+                                                AIModelService.generate_test_cases_stream(
+                                                    task, callback=stream_callback, retry=True)
+                                            )
+                                            if task.stream_buffer:
+                                                save_stream_buffer(task.stream_buffer)
+
                                         task.generated_test_cases = generated_cases
                                         task.progress = 60
                                         task.save()
@@ -1748,6 +1763,24 @@ class TestCaseGenerationTaskViewSet(viewsets.ModelViewSet):
                                                             revised_cases = AIModelService.fix_incomplete_last_case(
                                                                 revised_cases)
 
+                                                            # 校验改进结果能否解析出用例；若 0 条，用强化提示词重试一次改进
+                                                            if not self._parse_test_cases_content(revised_cases):
+                                                                logger.warning(
+                                                                    f"任务 {task.task_id} 改进结果解析出 0 条，使用强化提示词重试改进")
+                                                                task.final_test_cases = ''
+                                                                task.save(update_fields=['final_test_cases'])
+                                                                revised_cases = loop.run_until_complete(
+                                                                    asyncio.wait_for(
+                                                                        AIModelService.revise_test_cases_based_on_review(
+                                                                            task, generated_cases, task.review_feedback,
+                                                                            callback=final_callback, retry=True
+                                                                        ),
+                                                                        timeout=review_timeout
+                                                                    )
+                                                                )
+                                                                revised_cases = AIModelService.fix_incomplete_last_case(
+                                                                    revised_cases)
+
                                                             # 按用例编号排序后再保存
                                                             sorted_cases = AIModelService.sort_test_cases_by_id(
                                                                 revised_cases)
@@ -1755,6 +1788,8 @@ class TestCaseGenerationTaskViewSet(viewsets.ModelViewSet):
                                                             renumbered_cases = AIModelService.renumber_test_cases(
                                                                 sorted_cases)
                                                             task.final_test_cases = renumbered_cases
+                                                            # 立即落库完整内容，避免后续 refresh_from_db 回退为流式回调最后保存的截断值（会导致 JSON 不完整、保存解析 0 条）
+                                                            task.save(update_fields=['final_test_cases'])
                                                             logger.info(
                                                                 f"任务 {task.task_id} 测试用例改进完成 (revised_cases长度: {len(revised_cases)}, 最终保存长度: {len(task.final_test_cases)})")
                                                         else:
@@ -1883,6 +1918,24 @@ class TestCaseGenerationTaskViewSet(viewsets.ModelViewSet):
                                                             revised_cases = AIModelService.fix_incomplete_last_case(
                                                                 revised_cases)
 
+                                                            # 校验改进结果能否解析出用例；若 0 条，用强化提示词重试一次改进
+                                                            if not self._parse_test_cases_content(revised_cases):
+                                                                logger.warning(
+                                                                    f"任务 {task.task_id} 改进结果解析出 0 条，使用强化提示词重试改进")
+                                                                task.final_test_cases = ''
+                                                                task.save(update_fields=['final_test_cases'])
+                                                                revised_cases = loop.run_until_complete(
+                                                                    asyncio.wait_for(
+                                                                        AIModelService.revise_test_cases_based_on_review(
+                                                                            task, generated_cases, task.review_feedback,
+                                                                            callback=final_callback_full, retry=True
+                                                                        ),
+                                                                        timeout=review_timeout
+                                                                    )
+                                                                )
+                                                                revised_cases = AIModelService.fix_incomplete_last_case(
+                                                                    revised_cases)
+
                                                             # 按用例编号排序后再保存
                                                             sorted_cases = AIModelService.sort_test_cases_by_id(
                                                                 revised_cases)
@@ -1890,6 +1943,8 @@ class TestCaseGenerationTaskViewSet(viewsets.ModelViewSet):
                                                             renumbered_cases = AIModelService.renumber_test_cases(
                                                                 sorted_cases)
                                                             task.final_test_cases = renumbered_cases
+                                                            # 立即落库完整内容，避免后续 refresh_from_db 回退为流式回调最后保存的截断值（会导致 JSON 不完整、保存解析 0 条）
+                                                            task.save(update_fields=['final_test_cases'])
                                                             logger.info(
                                                                 f"任务 {task.task_id} 测试用例改进完成 (revised_cases长度: {len(revised_cases)}, 最终保存长度: {len(task.final_test_cases)})")
                                                         else:

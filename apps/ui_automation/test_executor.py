@@ -280,6 +280,8 @@ class TestExecutor:
                 '--ignore-certificate-errors',  # 忽略证书错误
                 '--allow-insecure-localhost',  # 允许不安全localhost
                 '--disable-web-security',  # 禁用web安全限制（跨域）
+                '--use-angle=swiftshader',  # 无 GPU 服务器用软件渲染，否则 3D/WebGL 模型不显示
+                '--enable-unsafe-swiftshader',  # 允许 SwiftShader 作为 WebGL 软件回退
             ]
             if self.browser == 'firefox':
                 browser = p.firefox.launch(headless=self.headless, args=common_args)
@@ -289,7 +291,12 @@ class TestExecutor:
                 browser = p.chromium.launch(headless=self.headless, args=common_args)
             # 加载项目登录态文件（如有）：所有用例/套件自动复用已保存的登录会话
             project = self.test_suite.project if getattr(self, 'test_suite', None) else None
-            login_state = load_login_state(project.id) if project is not None else None
+            login_case_id = load_login_case(project.id) if project is not None else None
+            # 若套件本身包含项目配置的"登录用例"，则不预加载登录态，让登录用例正常执行登录步骤
+            # （否则共享会话已注入登录态，登录用例会跳过登录页导致元素找不到）
+            suite_contains_login_case = bool(
+                login_case_id and any(int(cd.get('id')) == int(login_case_id) for cd in test_cases_data))
+            login_state = (load_login_state(project.id) if project is not None else None) if not suite_contains_login_case else None
             context_kwargs = {
                 'viewport': {'width': 1920, 'height': 1080},
                 'user_agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
@@ -300,9 +307,8 @@ class TestExecutor:
             self.context = browser.new_context(**context_kwargs)
             print(f"✓ 浏览器已启动（共享会话，所有用例保持登录态）")
 
-            # 自动执行"登录用例"获取登录会话（无头环境可用，无需人工操作浏览器）
-            login_case_id = load_login_case(project.id) if project is not None else None
-            if login_case_id and not login_state:
+            # 自动执行"登录用例"获取登录会话（无头环境可用，无需人工操作浏览器）；套件已含登录用例时无需自动执行
+            if login_case_id and not login_state and not suite_contains_login_case:
                 print("🔐 项目未保存有效登录态，自动执行登录用例获取登录会话...")
                 try:
                     login_case = TestCase.objects.filter(id=login_case_id, project=project).first() if project else None

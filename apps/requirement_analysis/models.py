@@ -822,7 +822,8 @@ class AIModelService:
     @staticmethod
     async def generate_test_cases_stream(
             task: TestCaseGenerationTask,
-            callback=None
+            callback=None,
+            retry=False
     ) -> str:
         """
         流式生成测试用例
@@ -859,6 +860,15 @@ class AIModelService:
             f"6. **完整性（关键）**：必须一次性输出全部用例，不要因篇幅省略任何一条。\n"
             f"【需求文档内容】\n{task.requirement_text}"
         )
+
+        if retry:
+            # 上次输出不合格（解析出 0 条），用强化提示词要求模型必须输出完整 JSON 数组
+            user_message += (
+                "\n\n【上次输出不合格】未能从你的输出解析出任何测试用例。"
+                "请务必只输出一个完整的、以 ] 闭合的 JSON 数组，包含全部用例对象，"
+                "字段固定为 id/category/scenario/precondition/steps/expected/priority，"
+                "不要输出任何 JSON 之外的文字、解释、markdown 代码块、总结或建议。"
+            )
 
         messages = [
             {"role": "system", "content": writer_prompt},
@@ -967,7 +977,8 @@ class AIModelService:
             task: TestCaseGenerationTask,
             original_test_cases: str,
             review_feedback: str,
-            callback=None
+            callback=None,
+            retry=False
     ) -> str:
         """
         根据评审意见改进测试用例
@@ -998,6 +1009,14 @@ class AIModelService:
             f"5. **完整性（关键）**：必须一次性输出全部改进后的用例，不要因篇幅省略任何一条；JSON 数组必须以 ] 完整闭合。\n"
             f"请直接输出改进后的完整 JSON 数组，不要包含任何其他内容。"
         )
+
+        if retry:
+            # 上次改进输出不合格（解析出 0 条），用强化提示词要求模型必须输出完整 JSON 数组
+            user_message += (
+                "\n\n【上次改进输出不合格】未能解析出任何测试用例。"
+                "请务必只输出一个完整的、以 ] 闭合的 JSON 数组，字段为 id/category/scenario/precondition/steps/expected/priority，"
+                "不要输出任何 JSON 之外的文字、解释、markdown 代码块、总结或建议。"
+            )
 
         messages = [
             {"role": "system", "content": writer_prompt},

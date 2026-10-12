@@ -156,6 +156,8 @@ class PlaywrightTestEngine:
                     '--disable-web-security',  # 禁用web安全限制（跨域）
                     '--no-sandbox',  # root 容器内必须禁用沙箱
                     '--disable-dev-shm-usage',  # 容器 /dev/shm 过小时避免崩溃
+                    '--use-angle=swiftshader',  # 无 GPU 服务器用软件渲染，否则 3D/WebGL 模型不显示
+                    '--enable-unsafe-swiftshader',  # 允许 SwiftShader 作为 WebGL 软件回退
                 ]
             )
 
@@ -267,6 +269,10 @@ class PlaywrightTestEngine:
             
         start_time = time.time()
         screenshot_base64 = None
+        # 在 try 前初始化，避免 wait/screenshot 等无需定位器的步骤在超时异常路径引用未定义变量（UnboundLocalError）
+        element_name = None
+        locator_strategy = None
+        locator_value = None
 
         try:
             # openUrl：打开指定URL，相对路径自动拼接项目 base_url（登录后跳转其它页面）
@@ -298,7 +304,13 @@ class PlaywrightTestEngine:
                 return True, log, None
 
             elif action_type == 'screenshot':
-                screenshot = await self.page.screenshot()
+                try:
+                    # 3D/数字孪生等页面加载慢，截图超时放宽到 60 秒，避免大页面截图超时
+                    screenshot = await self.page.screenshot(timeout=60000)
+                except Exception as e:
+                    execution_time = round(time.time() - start_time, 2)
+                    log = f"✗ 截图失败\n  - 错误: {str(e)}\n  - 执行时间: {execution_time}秒"
+                    return False, log, None
                 screenshot_base64 = f"data:image/png;base64,{base64.b64encode(screenshot).decode()}"
                 execution_time = round(time.time() - start_time, 2)
                 log = f"✓ 截图成功\n"
