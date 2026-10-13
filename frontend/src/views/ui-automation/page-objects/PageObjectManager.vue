@@ -265,14 +265,16 @@
     <el-dialog v-model="showAddElementDialog" :title="$t('uiAutomation.pageObject.addElementToPageObject')" width="600px">
       <el-form ref="addElementFormRef" :model="addElementForm" :rules="addElementRules" label-width="120px">
         <el-form-item :label="$t('uiAutomation.pageObject.selectElement')" prop="element_id">
-          <el-select v-model="addElementForm.element_id" :placeholder="$t('uiAutomation.pageObject.selectElement')" filterable>
-            <el-option
-              v-for="element in availableElements"
-              :key="element.id"
-              :label="`${element.name} (${element.page || $t('uiAutomation.pageObject.uncategorized')})`"
-              :value="element.id"
-            />
-          </el-select>
+          <el-tree-select
+            v-model="addElementForm.element_id"
+            :data="elementTreeData"
+            :props="{ label: 'label', value: 'value', children: 'children' }"
+            node-key="id"
+            check-strictly
+            filterable
+            :render-after-expand="true"
+            :placeholder="$t('uiAutomation.pageObject.selectElement')"
+          />
         </el-form-item>
         <el-form-item :label="$t('uiAutomation.pageObject.methodName')" prop="method_name">
           <el-input v-model="addElementForm.method_name" :placeholder="$t('uiAutomation.pageObject.rules.methodNameRequired')" />
@@ -398,6 +400,31 @@ const filteredElements = computed(() => {
     element.name.includes(elementFilter.value) ||
     (element.page && element.page.includes(elementFilter.value))
   )
+})
+
+// 树形数据：页面(可折叠、不可选) → 元素(可选)，"添加元素"选择时先按页面定位再展开选
+const elementTreeData = computed(() => {
+  const groups = []
+  const byPage = new Map()
+  for (const elem of availableElements.value) {
+    const page = (elem.page && String(elem.page).trim()) ? elem.page.trim() : ''
+    if (!byPage.has(page)) {
+      byPage.set(page, [])
+      groups.push({ page, items: byPage.get(page) })
+    }
+    byPage.get(page).push(elem)
+  }
+  return groups.map(group => ({
+    id: 'page__' + (group.page || 'ungrouped'),
+    label: group.page || t('uiAutomation.pageObject.uncategorized'),
+    value: null,
+    disabled: true,
+    children: group.items.map(elem => ({
+      id: 'elem__' + elem.id,
+      label: `${elem.name} (${elem.locator_value})`,
+      value: elem.id
+    }))
+  }))
 })
 
 // 方法定义

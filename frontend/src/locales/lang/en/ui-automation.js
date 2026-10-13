@@ -1112,6 +1112,7 @@ export default {
     actionSwitchTab: 'Switch Tab',
     actionOpenUrl: 'Open URL',
     selectElement: 'Select Element',
+    ungroupedElements: 'Ungrouped',
     inputValue: 'Input Value:',
     inputPlaceholder: "Enter content, supports variables like '{'random_phone()'}'",
     switchTabPlaceholder: 'Enter index (0,1...) or leave empty for latest',

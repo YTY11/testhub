@@ -644,8 +644,37 @@ export default {
         return 0
       }
 
-      // 解析测试用例内容，计算条数
       const content = task.final_test_cases
+
+      // 优先 JSON 数组格式（AI 常输出 JSON，表格/文本规则会漏数成 0）
+      try {
+        const start = content.indexOf('[')
+        if (start >= 0) {
+          let depth = 0, inStr = false, esc = false, end = -1
+          for (let i = start; i < content.length; i++) {
+            const ch = content[i]
+            if (inStr) {
+              if (esc) esc = false
+              else if (ch === '\\') esc = true
+              else if (ch === '"') inStr = false
+            } else {
+              if (ch === '"') inStr = true
+              else if (ch === '[') depth++
+              else if (ch === ']') {
+                depth--
+                if (depth === 0) { end = i; break }
+              }
+            }
+          }
+          if (end >= 0) {
+            const arr = JSON.parse(content.slice(start, end + 1))
+            if (Array.isArray(arr)) return arr.length
+          }
+        }
+      } catch (e) {
+        // 不是 JSON，继续走表格/文本解析
+      }
+
       const lines = content.split('\n').filter(line => line.trim())
 
       // 尝试表格格式

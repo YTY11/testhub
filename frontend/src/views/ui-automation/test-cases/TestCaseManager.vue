@@ -163,22 +163,21 @@
                             <el-option :label="t('uiAutomation.testCase.actionSwitchTab')" value="switchTab" />
                             <el-option :label="t('uiAutomation.testCase.actionOpenUrl')" value="openUrl" />
                           </el-select>
-                          <el-select
+                          <!-- 树形下拉：页面(可折叠、不可选) → 元素(可选)，先按页面定位再展开选，避免全量平铺难找 -->
+                          <el-tree-select
                             v-if="needsElement(element.action_type)"
                             v-model="element.element_id"
+                            :data="elementTreeData"
+                            :props="{ label: 'label', value: 'value', children: 'children' }"
+                            node-key="id"
+                            check-strictly
+                            filterable
+                            :render-after-expand="true"
                             :placeholder="t('uiAutomation.testCase.selectElement')"
                             size="small"
-                            style="width: 200px"
-                            filterable
+                            style="width: 240px"
                             @change="onElementChange(element)"
-                          >
-                            <el-option
-                              v-for="elem in availableElements"
-                              :key="elem.id"
-                              :label="`${elem.name} (${elem.locator_value})`"
-                              :value="elem.id"
-                            />
-                          </el-select>
+                          />
                         </div>
                         <div class="step-right">
                           <el-button
@@ -672,6 +671,36 @@ const loadElements = async () => {
     console.error('获取元素列表失败:', error)
   }
 }
+
+// 元素按所属页面分组，供用例步骤元素下拉按页面快速定位选择（元素多时不再全量罗列）
+const groupedElements = computed(() => {
+  const groups = []
+  const byPage = new Map()
+  for (const elem of availableElements.value) {
+    const page = (elem.page && String(elem.page).trim()) ? elem.page.trim() : ''
+    if (!byPage.has(page)) {
+      byPage.set(page, [])
+      groups.push({ page, items: byPage.get(page) })
+    }
+    byPage.get(page).push(elem)
+  }
+  return groups
+})
+
+// 树形数据：页面(可折叠、不可选) → 元素(可选)；页面多/元素多时先定位页面再展开选
+const elementTreeData = computed(() =>
+  groupedElements.value.map(group => ({
+    id: 'page__' + (group.page || 'ungrouped'),
+    label: group.page || t('uiAutomation.testCase.ungroupedElements'),
+    value: null,
+    disabled: true,
+    children: group.items.map(elem => ({
+      id: 'elem__' + elem.id,
+      label: `${elem.name} (${elem.locator_value})`,
+      value: elem.id
+    }))
+  }))
+)
 
 const onProjectChange = async () => {
   selectedTestCase.value = null

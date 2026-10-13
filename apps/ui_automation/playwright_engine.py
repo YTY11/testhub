@@ -158,6 +158,7 @@ class PlaywrightTestEngine:
                     '--disable-dev-shm-usage',  # 容器 /dev/shm 过小时避免崩溃
                     '--use-angle=swiftshader',  # 无 GPU 服务器用软件渲染，否则 3D/WebGL 模型不显示
                     '--enable-unsafe-swiftshader',  # 允许 SwiftShader 作为 WebGL 软件回退
+                    '--disable-remote-fonts',  # 3D 页面远程字体加载挂起会导致截图等 fonts 超时，禁用远程字体
                 ]
             )
 

@@ -366,6 +366,12 @@ export default {
       // 去除markdown加粗标记，保留纯净文本
       let cleanContent = content.replace(/\*\*([^*]+)\*\*/g, '$1')
 
+      // 优先 JSON 数组格式（AI 常输出 JSON；表格/文本规则会解析为空，导致采纳/弃用选不到用例）
+      const jsonCases = this.parseJsonTestCases(cleanContent)
+      if (jsonCases && jsonCases.length > 0) {
+        return jsonCases
+      }
+
       const lines = cleanContent.split('\n').filter(line => line.trim())
       const testCases = []
 
@@ -473,6 +479,59 @@ export default {
       }
       
       return testCases
+    },
+
+    // 解析 JSON 数组格式的测试用例（AI 常输出 JSON），供详情页展示与全部/批量采纳、批量弃用
+    parseJsonTestCases(content) {
+      let arr = null
+      try {
+        const start = content.indexOf('[')
+        if (start < 0) return []
+        let depth = 0, inStr = false, esc = false, end = -1
+        for (let i = start; i < content.length; i++) {
+          const ch = content[i]
+          if (inStr) {
+            if (esc) esc = false
+            else if (ch === '\\') esc = true
+            else if (ch === '"') inStr = false
+          } else {
+            if (ch === '"') inStr = true
+            else if (ch === '[') depth++
+            else if (ch === ']') {
+              depth--
+              if (depth === 0) { end = i; break }
+            }
+          }
+        }
+        if (end < 0) return []
+        arr = JSON.parse(content.slice(start, end + 1))
+      } catch (e) {
+        return []
+      }
+      if (!Array.isArray(arr)) return []
+
+      const first = (item, ...keys) => {
+        for (const k of keys) {
+          const v = item[k]
+          if (v !== undefined && v !== null && String(v).trim()) return String(v).trim()
+        }
+        return ''
+      }
+
+      return arr.filter(item => item && typeof item === 'object').map(item => {
+        const scenario = first(item, 'scenario', 'title', 'name', '场景', '标题', '测试目标', 'category')
+        const steps = first(item, 'steps', 'testSteps', '步骤', '测试步骤', '操作步骤')
+        const expected = first(item, 'expected', 'expected_result', '预期', '预期结果')
+        const precondition = first(item, 'precondition', '前置', '前提')
+        return {
+          caseId: first(item, 'id', 'caseId', 'case_id', '编号'),
+          scenario,
+          precondition,
+          steps: steps || scenario,
+          expected,
+          priority: first(item, 'priority', '优先级') || 'P2'
+        }
+      })
     },
 
     getStatusText(status) {

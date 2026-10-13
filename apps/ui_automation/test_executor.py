@@ -282,6 +282,7 @@ class TestExecutor:
                 '--disable-web-security',  # 禁用web安全限制（跨域）
                 '--use-angle=swiftshader',  # 无 GPU 服务器用软件渲染，否则 3D/WebGL 模型不显示
                 '--enable-unsafe-swiftshader',  # 允许 SwiftShader 作为 WebGL 软件回退
+                '--disable-remote-fonts',  # 3D 页面远程字体加载挂起会导致截图等 fonts 超时，禁用远程字体
             ]
             if self.browser == 'firefox':
                 browser = p.firefox.launch(headless=self.headless, args=common_args)

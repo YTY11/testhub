@@ -1112,6 +1112,7 @@ export default {
     actionSwitchTab: '切换标签页',
     actionOpenUrl: '打开URL',
     selectElement: '选择元素',
+    ungroupedElements: '未分组',
     inputValue: '输入值：',
     inputPlaceholder: "请输入内容，支持变量如 '{'random_phone()'}'",
     switchTabPlaceholder: '输入索引(0,1...)或留空切换到最新',
