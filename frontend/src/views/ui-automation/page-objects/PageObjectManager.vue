@@ -273,6 +273,7 @@
             check-strictly
             filterable
             :render-after-expand="true"
+            :render-content="renderTreeNode"
             :placeholder="$t('uiAutomation.pageObject.selectElement')"
           />
         </el-form-item>
@@ -426,6 +427,12 @@ const elementTreeData = computed(() => {
     }))
   }))
 })
+
+// 树节点 label 过长省略、鼠标悬浮显示完整文本
+const renderTreeNode = (h, { data }) => {
+  const label = data.label || ''
+  return h('span', { title: label, class: 'tree-node-ellipsis-label' }, label)
+}
 
 // 方法定义
 const loadProjects = async () => {
@@ -1050,5 +1057,15 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* 树节点 label 过长省略、悬浮显示完整文本 */
+.tree-node-ellipsis-label {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 </style>

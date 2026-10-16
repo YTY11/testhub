@@ -612,6 +612,7 @@ class TestCaseStep(models.Model):
         ('click', '点击'),
         ('fill', '输入文本'),
         ('getText', '获取文本'),
+        ('getCount', '获取数量'),
         ('waitFor', '等待元素'),
         ('hover', '悬停'),
         ('scroll', '滚动'),
@@ -620,6 +621,7 @@ class TestCaseStep(models.Model):
         ('wait', '等待'),
         ('switchTab', '切换标签页'),
         ('openUrl', '打开URL'),
+        ('eval', '执行脚本'),
     ]
 
     ASSERT_TYPE_CHOICES = [
@@ -628,6 +630,7 @@ class TestCaseStep(models.Model):
         ('isVisible', '元素可见'),
         ('exists', '元素存在'),
         ('hasAttribute', '属性值'),
+        ('varCompare', '表达式比较'),
     ]
 
     test_case = models.ForeignKey(TestCase, on_delete=models.CASCADE, related_name='steps', verbose_name='测试用例')

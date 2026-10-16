@@ -154,6 +154,7 @@
                             <el-option :label="t('uiAutomation.testCase.actionClick')" value="click" />
                             <el-option :label="t('uiAutomation.testCase.actionFill')" value="fill" />
                             <el-option :label="t('uiAutomation.testCase.actionGetText')" value="getText" />
+                            <el-option :label="t('uiAutomation.testCase.actionGetCount')" value="getCount" />
                             <el-option :label="t('uiAutomation.testCase.actionWaitFor')" value="waitFor" />
                             <el-option :label="t('uiAutomation.testCase.actionHover')" value="hover" />
                             <el-option :label="t('uiAutomation.testCase.actionScroll')" value="scroll" />
@@ -162,6 +163,7 @@
                             <el-option :label="t('uiAutomation.testCase.actionWait')" value="wait" />
                             <el-option :label="t('uiAutomation.testCase.actionSwitchTab')" value="switchTab" />
                             <el-option :label="t('uiAutomation.testCase.actionOpenUrl')" value="openUrl" />
+                            <el-option :label="t('uiAutomation.testCase.actionEval')" value="eval" />
                           </el-select>
                           <!-- 树形下拉：页面(可折叠、不可选) → 元素(可选)，先按页面定位再展开选，避免全量平铺难找 -->
                           <el-tree-select
@@ -173,6 +175,7 @@
                             check-strictly
                             filterable
                             :render-after-expand="true"
+                            :render-content="renderTreeNode"
                             :placeholder="t('uiAutomation.testCase.selectElement')"
                             size="small"
                             style="width: 240px"
@@ -202,7 +205,7 @@
                           <div style="display: flex; gap: 5px; flex: 1">
                             <el-input
                               v-model="element.input_value"
-                              :placeholder="element.action_type === 'switchTab' ? t('uiAutomation.testCase.switchTabPlaceholder') : t('uiAutomation.testCase.inputPlaceholder')"
+                              :placeholder="element.action_type === 'switchTab' ? t('uiAutomation.testCase.switchTabPlaceholder') : (element.action_type === 'eval' ? t('uiAutomation.testCase.evalPlaceholder') : t('uiAutomation.testCase.inputPlaceholder'))"
                               size="small"
                             >
                               <template #append>
@@ -221,6 +224,17 @@
                               </el-button>
                             </el-tooltip>
                           </div>
+                        </div>
+
+                        <!-- 存变量名（getText/getCount 把值存到变量，供后续 varCompare 表达式比较） -->
+                        <div v-if="element.action_type === 'getText' || element.action_type === 'getCount'" class="step-param">
+                          <label>{{ t('uiAutomation.testCase.saveVariableName') }}</label>
+                          <el-input
+                            v-model="element.input_value"
+                            :placeholder="t('uiAutomation.testCase.saveVariableNamePlaceholder')"
+                            size="small"
+                            style="width: 220px"
+                          />
                         </div>
 
                         <!-- 等待时间 -->
@@ -244,11 +258,12 @@
                             <el-option :label="t('uiAutomation.testCase.assertIsVisible')" value="isVisible" />
                             <el-option :label="t('uiAutomation.testCase.assertExists')" value="exists" />
                             <el-option :label="t('uiAutomation.testCase.assertHasAttribute')" value="hasAttribute" />
+                            <el-option :label="t('uiAutomation.testCase.assertVarCompare')" value="varCompare" />
                           </el-select>
                           <div style="display: flex; align-items: center; margin-left: 10px; width: 240px">
                             <el-input
                               v-model="element.assert_value"
-                              :placeholder="t('uiAutomation.testCase.expectedValue')"
+                              :placeholder="element.assert_type === 'varCompare' ? t('uiAutomation.testCase.varComparePlaceholder') : t('uiAutomation.testCase.expectedValue')"
                               size="small"
                               style="flex: 1"
                             >
@@ -702,6 +717,12 @@ const elementTreeData = computed(() =>
   }))
 )
 
+// 树节点 label 过长时省略，鼠标悬浮显示完整文本
+const renderTreeNode = (h, { data }) => {
+  const label = data.label || ''
+  return h('span', { title: label, class: 'tree-node-ellipsis-label' }, label)
+}
+
 const onProjectChange = async () => {
   selectedTestCase.value = null
   currentSteps.value = []
@@ -782,7 +803,7 @@ const onElementChange = (step) => {
 }
 
 const needsInputValue = (actionType) => {
-  return ['fill', 'switchTab', 'openUrl'].includes(actionType)
+  return ['fill', 'switchTab', 'openUrl', 'eval'].includes(actionType)
 }
 
 const needsWaitTime = (actionType) => {
@@ -790,7 +811,7 @@ const needsWaitTime = (actionType) => {
 }
 
 const needsElement = (actionType) => {
-  return !['wait', 'switchTab', 'screenshot', 'openUrl'].includes(actionType)
+  return !['wait', 'switchTab', 'screenshot', 'openUrl', 'eval'].includes(actionType)
 }
 
 const expandAllSteps = () => {
@@ -1172,7 +1193,11 @@ const saveTestCaseForm = async () => {
       description: testCaseForm.description,
       priority: testCaseForm.priority,
       project: projectId.value,
-      steps: []
+    }
+    // 编辑已有用例时不提交 steps（后端 steps 只读、不清库；不传避免前端把本地 steps 缓存覆盖为空导致显示 0 步骤）
+    // 仅新建用例时 steps 初始为空
+    if (!editingTestCase.value) {
+      data.steps = []
     }
 
     if (editingTestCase.value) {
@@ -1525,6 +1550,16 @@ onMounted(async () => {
   margin-bottom: 10px;
   background: white;
   transition: all 0.3s;
+}
+
+/* 树节点 label 过长省略、悬浮显示完整文本 */
+.tree-node-ellipsis-label {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 .step-item:hover {

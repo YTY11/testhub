@@ -3,6 +3,7 @@ Selenium自动化测试执行引擎
 用于驱动真实浏览器执行UI自动化测试
 """
 import base64
+import re
 import time
 from .variable_resolver import resolve_variables
 import os
@@ -20,6 +21,169 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+# ---- 通用"取值存变量 + 表达式比较断言"工具（无数据库变更，运行时内存变量） ----
+_VAR_RE = re.compile(r'\$\{([A-Za-z_][A-Za-z0-9_]*)\}')
+_COMPARE_OPS = ['>=', '<=', '==', '!=', '>', '<']
+
+
+def _replace_vars(expr, variables):
+    """将 ${name} 替换为运行时变量值；未定义保留原样"""
+    def repl(m):
+        name = m.group(1)
+        return str(variables[name]) if name in variables else m.group(0)
+    return _VAR_RE.sub(repl, expr)
+
+
+def _tokenize_arith(s):
+    """数值表达式分词；含非数字文本返回 None（视为字符串）"""
+    tokens = []
+    i = 0
+    n = len(s)
+    while i < n:
+        c = s[i]
+        if c.isspace():
+            i += 1
+        elif c in '+-*/()':
+            tokens.append(c)
+            i += 1
+        elif c.isdigit() or c == '.':
+            j = i
+            while j < n and (s[j].isdigit() or s[j] == '.'):
+                j += 1
+            try:
+                float(s[i:j])
+            except ValueError:
+                return None
+            tokens.append(s[i:j])
+            i = j
+        else:
+            return None
+    return tokens
+
+
+def _eval_arith(s):
+    """安全求值数值四则表达式（+ - * / ( )），不含 eval；含文本返回原字符串"""
+    s = s.strip()
+    if not s:
+        return ''
+    tokens = _tokenize_arith(s)
+    if tokens is None:
+        return s
+
+    def parse_expr(pos):
+        val, pos = parse_term(pos)
+        while pos < len(tokens) and tokens[pos] in ('+', '-'):
+            op = tokens[pos]
+            pos += 1
+            rhs, pos = parse_term(pos)
+            val = val + rhs if op == '+' else val - rhs
+        return val, pos
+
+    def parse_term(pos):
+        val, pos = parse_factor(pos)
+        while pos < len(tokens) and tokens[pos] in ('*', '/'):
+            op = tokens[pos]
+            pos += 1
+            rhs, pos = parse_factor(pos)
+            val = val * rhs if op == '*' else (val / rhs)
+        return val, pos
+
+    def parse_factor(pos):
+        t = tokens[pos]
+        if t == '(':
+            val, pos = parse_expr(pos + 1)
+            if pos >= len(tokens) or tokens[pos] != ')':
+                raise ValueError('unbalanced')
+            return val, pos + 1
+        if t in ('+', '-'):
+            val, pos = parse_factor(pos + 1)
+            return val if t == '+' else (-val), pos
+        return float(t), pos + 1
+
+    try:
+        val, pos = parse_expr(0)
+        if pos != len(tokens):
+            return s
+        return val
+    except Exception:
+        return s
+
+
+def _split_compare(s):
+    """在顶层(括号外)找到比较运算符，返回 (left, op, right) 或 None"""
+    for op in _COMPARE_OPS:
+        depth = 0
+        i = 0
+        while i < len(s):
+            if s[i] == '(':
+                depth += 1
+                i += 1
+            elif s[i] == ')':
+                depth = max(0, depth - 1)
+                i += 1
+            else:
+                if depth == 0 and s.startswith(op, i):
+                    left = s[:i].strip()
+                    right = s[i + len(op):].strip()
+                    if left and right:
+                        return left, op, right
+                    return None
+                i += 1
+    return None
+
+
+def _to_num(v):
+    try:
+        return float(str(v).replace(',', '').strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _num_compare(left, right, op):
+    if op == '==':
+        return abs(left - right) < 1e-9
+    if op == '!=':
+        return abs(left - right) >= 1e-9
+    if op == '>':
+        return left > right
+    if op == '<':
+        return left < right
+    if op == '>=':
+        return left >= right
+    if op == '<=':
+        return left <= right
+    return False
+
+
+def evaluate_var_comparison(expr, variables):
+    """安全求值变量比较表达式（支持 ${var}、四则、== != > < >= <=）。
+
+    返回 (是否成立, 说明)。无比较符时视为求值，非 0 / 非空为真。
+    """
+    replaced = _replace_vars(expr, variables)
+    split = _split_compare(replaced)
+    if split:
+        left_raw, op, right_raw = split
+        left_val = _eval_arith(left_raw)
+        right_val = _eval_arith(right_raw)
+        ln = _to_num(left_val)
+        rn = _to_num(right_val)
+        if ln is not None and rn is not None:
+            ok = _num_compare(ln, rn, op)
+            return ok, f"计算: '{left_raw.strip()}' = {ln}, '{right_raw.strip()}' = {rn}, '{op}' -> {'成立' if ok else '不成立'}"
+        if op in ('==', '!='):
+            ok = (str(left_val) == str(right_val)) if op == '==' else (str(left_val) != str(right_val))
+            return ok, f"比较: '{left_val}' {op} '{right_val}' -> {'成立' if ok else '不成立'}"
+        return False, f"无法比较(非数值): '{left_val}' {op} '{right_val}'"
+    val = _eval_arith(replaced)
+    if isinstance(val, (int, float)):
+        ok = val != 0
+        return ok, f"表达式求值 = {val} -> {'成立' if ok else '不成立'}"
+    ok = bool(val and str(val).strip())
+    return ok, f"表达式 = '{val}' -> {'成立' if ok else '不成立'}"
+
+
+
 class SeleniumTestEngine:
     """Selenium测试执行引擎"""
 
@@ -35,6 +199,8 @@ class SeleniumTestEngine:
         self.headless = headless
         self.base_url = None
         self.driver = None
+        # 用例执行期间的运行时变量（步骤间传值，如 getText/getCount 存值、varCompare 比较），仅内存不落库
+        self.runtime_vars: Dict[str, object] = {}
 
     @staticmethod
     def check_browser_available(browser_type='chrome'):
@@ -507,6 +673,33 @@ class SeleniumTestEngine:
                 log += f"  - 执行时间: {execution_time}秒"
                 return True, log, screenshot_base64
 
+            elif action_type == 'eval':
+                # 执行页面脚本（诊断用：如检测 WebGL 可用性、模型资源加载状态），结果打印到日志，失败不影响用例结果
+                script = (step.input_value or '').strip()
+                if not script:
+                    log = f"⚠ 执行脚本失败: 脚本为空"
+                    return True, log, None
+                try:
+                    result = self.driver.execute_script(script)
+                except Exception as e:
+                    execution_time = round(time.time() - start_time, 2)
+                    log = f"⚠ 执行脚本异常（不影响用例结果）\n  - 错误: {str(e)}\n  - 执行时间: {execution_time}秒"
+                    return True, log, None
+                execution_time = round(time.time() - start_time, 2)
+                if isinstance(result, (dict, list)):
+                    try:
+                        import json
+                        result_text = json.dumps(result, ensure_ascii=False, default=str)
+                    except Exception:
+                        result_text = str(result)
+                else:
+                    result_text = str(result)
+                log = f"✓ 执行脚本完成\n"
+                log += f"  - 脚本: {script}\n"
+                log += f"  - 返回: {result_text}\n"
+                log += f"  - 执行时间: {execution_time}秒"
+                return True, log, None
+
             elif action_type == 'switchTab':
                 # 切换标签页
                 # 获取超时时间
@@ -752,10 +945,17 @@ class SeleniumTestEngine:
                 for attempt in range(max_retries):
                     try:
                         text = element.text
+                        # 存变量：input_value 作为变量名，文本含数字则存数字，否则存原文
+                        var_name = (step.input_value or '').strip()
+                        if var_name:
+                            num = _to_num(text)
+                            self.runtime_vars[var_name] = num if num is not None else text.strip()
                         execution_time = round(time.time() - start_time, 2)
                         log = f"✓ 获取元素 '{element_name}' 的文本成功\n"
                         log += f"  - 定位器: {locator_strategy}={locator_value}\n"
                         log += f"  - 文本内容: '{text}'\n"
+                        if var_name:
+                            log += f"  - 已存入变量: '{var_name}' = {self.runtime_vars[var_name]}\n"
                         log += f"  - 超时设置: {timeout_seconds}秒\n"
                         log += f"  - 执行时间: {execution_time}秒"
                         return True, log, None
@@ -771,6 +971,22 @@ class SeleniumTestEngine:
                             logger.info(f"✓ 元素重新定位成功")
                         else:
                             raise
+
+            elif action_type == 'getCount':
+                # 获取匹配元素数量并存入变量（input_value 作为变量名）
+                matches = self.driver.find_elements(by_type, by_value)
+                count = len(matches)
+                var_name = (step.input_value or '').strip()
+                if var_name:
+                    self.runtime_vars[var_name] = count
+                execution_time = round(time.time() - start_time, 2)
+                log = f"✓ 获取元素 '{element_name}' 的数量成功\n"
+                log += f"  - 定位器: {locator_strategy}={locator_value}\n"
+                log += f"  - 匹配数量: {count}\n"
+                if var_name:
+                    log += f"  - 已存入变量: '{var_name}' = {count}\n"
+                log += f"  - 执行时间: {execution_time}秒"
+                return True, log, None
 
             elif action_type == 'waitFor':
                 # 等待元素可见
@@ -876,11 +1092,24 @@ class SeleniumTestEngine:
                     log = f"✓ 断言通过: 元素 '{element_name}' 存在"
                     return True, log, None
 
+                elif step.assert_type == 'varCompare':
+                    ok, detail = evaluate_var_comparison(step.assert_value, self.runtime_vars)
+                    if ok:
+                        log = f"✓ 断言通过: 表达式 '{step.assert_value}' 成立\n"
+                        log += f"  - {detail}"
+                        return True, log, None
+                    else:
+                        log = f"✗ 断言失败: 表达式 '{step.assert_value}' 不成立\n"
+                        log += f"  - {detail}"
+                        try:
+                            screenshot = self.driver.get_screenshot_as_base64()
+                            screenshot_base64 = f"data:image/png;base64,{screenshot}"
+                        except Exception:
+                            screenshot_base64 = None
+                        return False, log, screenshot_base64
 
 
-            else:
-                log = f"⚠ 未知的操作类型: {action_type}"
-                return True, log, None
+
 
         except TimeoutException as e:
             execution_time = round(time.time() - start_time, 2)

@@ -23,6 +23,7 @@ from .models import (
 )
 from .variable_resolver import resolve_variables
 from .login_state import load_login_state, save_login_state, load_login_case
+from .playwright_engine import evaluate_var_comparison, _to_num
 
 
 class TestExecutor:
@@ -37,6 +38,8 @@ class TestExecutor:
         self.execution = None
         self.test_cases = []
         self.results = []
+        # 用例执行期间运行时变量（getText/getCount 存值、varCompare 表达式比较），仅内存不落库
+        self.runtime_vars = {}
 
     def create_execution_record(self):
         """创建测试执行记录"""
@@ -280,7 +283,7 @@ class TestExecutor:
                 '--ignore-certificate-errors',  # 忽略证书错误
                 '--allow-insecure-localhost',  # 允许不安全localhost
                 '--disable-web-security',  # 禁用web安全限制（跨域）
-                '--use-angle=swiftshader',  # 无 GPU 服务器用软件渲染，否则 3D/WebGL 模型不显示
+                '--use-angle=swiftshader-webgl',  # 无 GPU 服务器用 WebGL 专用软件渲染（three.js/Unity 更兼容），否则模型不显示
                 '--enable-unsafe-swiftshader',  # 允许 SwiftShader 作为 WebGL 软件回退
                 '--disable-remote-fonts',  # 3D 页面远程字体加载挂起会导致截图等 fonts 超时，禁用远程字体
             ]
@@ -1067,6 +1070,20 @@ class TestExecutor:
                     text = self.current_page.text_content(selector, timeout=step_data['wait_time'])
                     step_result['result'] = text
                     step_result['success'] = True
+                    var_name = (step_data.get('input_value') or '').strip()
+                    if var_name:
+                        num = _to_num(text)
+                        self.runtime_vars[var_name] = num if num is not None else text.strip()
+                        print(f"  ✓ 已存入变量: '{var_name}' = {self.runtime_vars[var_name]}")
+
+                elif step_data['action_type'] == 'getCount':
+                    count = self._locate_playwright(selector).count()
+                    step_result['result'] = count
+                    step_result['success'] = True
+                    var_name = (step_data.get('input_value') or '').strip()
+                    if var_name:
+                        self.runtime_vars[var_name] = count
+                        print(f"  ✓ 已存入变量: '{var_name}' = {count}")
 
                 elif step_data['action_type'] == 'waitFor':
                     # 检测是否是下拉框选项（下拉框选项可能是隐藏的）
@@ -1097,9 +1114,50 @@ class TestExecutor:
 
                 elif step_data['action_type'] == 'screenshot':
                     import base64
-                    screenshot_bytes = self.current_page.screenshot()
-                    step_result['screenshot'] = f"data:image/png;base64,{base64.b64encode(screenshot_bytes).decode()}"
-                    step_result['success'] = True
+                    # 先尝试冻结页面动画，避免 WebGL/数字孪生持续渲染导致截图等待"页面稳定"超时
+                    try:
+                        self.current_page.evaluate("""() => {
+                            if (window.__testhub_rAFStopped) return;
+                            window.__testhub_rAFStopped = true;
+                            try { window.requestAnimationFrame = (cb) => 0; } catch (e) {}
+                            try {
+                                document.querySelectorAll('*').forEach(el => {
+                                    const s = el.style;
+                                    if (s) { s.animationPlayState = 'paused'; s.transition = 'none'; }
+                                });
+                            } catch (e) {}
+                        }""")
+                    except Exception:
+                        pass
+                    try:
+                        screenshot_bytes = self.current_page.screenshot(animations='disabled', timeout=60000)
+                        step_result['screenshot'] = f"data:image/png;base64,{base64.b64encode(screenshot_bytes).decode()}"
+                        step_result['success'] = True
+                    except Exception as e:
+                        # 截图失败降级：不判定用例失败，仅记录告警（截图是记录用途，不影响用例结果）
+                        step_result['success'] = True
+                        step_result['error'] = f"⚠ 截图未完成（不影响用例结果）: {str(e)}"
+                        print(f"⚠ 截图未完成（不影响用例结果）: {str(e)}")
+
+                elif step_data['action_type'] == 'eval':
+                    # 执行页面脚本（诊断用：如检测 WebGL 可用性、模型资源加载状态），结果打印到日志，失败不影响用例结果
+                    script = (step_data.get('input_value') or '').strip()
+                    if not script:
+                        step_result['success'] = True
+                        step_result['error'] = '⚠ 执行脚本失败: 脚本为空'
+                        print('⚠ 执行脚本失败: 脚本为空')
+                    else:
+                        import json
+                        try:
+                            result = self.current_page.evaluate(script)
+                            result_text = json.dumps(result, ensure_ascii=False, default=str) if isinstance(result, (dict, list)) else str(result)
+                            print(f"✓ 执行脚本完成:\n  脚本: {script}\n  返回: {result_text}")
+                            step_result['result'] = result_text
+                            step_result['success'] = True
+                        except Exception as e:
+                            step_result['success'] = True
+                            step_result['error'] = f"⚠ 执行脚本异常（不影响用例结果）: {str(e)}"
+                            print(f"⚠ 执行脚本异常（不影响用例结果）: {str(e)}")
 
                 elif step_data['action_type'] == 'assert':
                     # 解析断言值中的变量
@@ -1137,6 +1195,14 @@ class TestExecutor:
                         step_result['success'] = count > 0
                         if count == 0:
                             step_result['error'] = f"✗ 断言失败: 元素 '{element_name}' 不存在"
+
+                    elif step_data['assert_type'] == 'varCompare':
+                        ok, detail = evaluate_var_comparison(step_data['assert_value'], self.runtime_vars)
+                        step_result['success'] = ok
+                        if not ok:
+                            step_result['error'] = f"✗ 断言失败: 表达式 '{step_data['assert_value']}' 不成立\n  - {detail}"
+                        else:
+                            print(f"  ✓ 表达式断言通过: {step_data['assert_value']} -> {detail}")
 
                 elif step_data['action_type'] == 'openUrl':
                     # 打开URL：支持绝对URL或相对路径（相对路径自动拼接项目 base_url）
@@ -2422,6 +2488,11 @@ class TestExecutor:
                             text = element_obj.text
                             step_result['result'] = text
                             step_result['success'] = True
+                            var_name = (step_data.get('input_value') or '').strip()
+                            if var_name:
+                                num = _to_num(text)
+                                self.runtime_vars[var_name] = num if num is not None else text.strip()
+                                print(f"  ✓ 已存入变量: '{var_name}' = {self.runtime_vars[var_name]}")
                             break
                         except StaleElementReferenceException:
                             if attempt < max_retries - 1:
@@ -2435,6 +2506,16 @@ class TestExecutor:
                                 print(f"✓ 元素重新定位成功")
                             else:
                                 raise
+
+                elif step_data['action_type'] == 'getCount':
+                    matches = driver.find_elements(by, locator_value)
+                    count = len(matches)
+                    step_result['result'] = count
+                    step_result['success'] = True
+                    var_name = (step_data.get('input_value') or '').strip()
+                    if var_name:
+                        self.runtime_vars[var_name] = count
+                        print(f"  ✓ 已存入变量: '{var_name}' = {count}")
 
                 elif step_data['action_type'] == 'hover':
                     # 先定位元素
@@ -2464,6 +2545,26 @@ class TestExecutor:
                     screenshot_bytes = driver.get_screenshot_as_png()
                     step_result['screenshot'] = f"data:image/png;base64,{base64.b64encode(screenshot_bytes).decode()}"
                     step_result['success'] = True
+
+                elif step_data['action_type'] == 'eval':
+                    # 执行页面脚本（诊断用：如检测 WebGL 可用性、模型资源加载状态），结果打印到日志，失败不影响用例结果
+                    script = (step_data.get('input_value') or '').strip()
+                    if not script:
+                        step_result['success'] = True
+                        step_result['error'] = '⚠ 执行脚本失败: 脚本为空'
+                        print('⚠ 执行脚本失败: 脚本为空')
+                    else:
+                        import json
+                        try:
+                            result = driver.execute_script(script)
+                            result_text = json.dumps(result, ensure_ascii=False, default=str) if isinstance(result, (dict, list)) else str(result)
+                            print(f"✓ 执行脚本完成:\n  脚本: {script}\n  返回: {result_text}")
+                            step_result['result'] = result_text
+                            step_result['success'] = True
+                        except Exception as e:
+                            step_result['success'] = True
+                            step_result['error'] = f"⚠ 执行脚本异常（不影响用例结果）: {str(e)}"
+                            print(f"⚠ 执行脚本异常（不影响用例结果）: {str(e)}")
 
                 elif step_data['action_type'] == 'assert':
                     # 先定位元素
@@ -2501,6 +2602,14 @@ class TestExecutor:
                     elif step_data['assert_type'] == 'exists':
                         # 元素已经找到，说明存在
                         step_result['success'] = True
+
+                    elif step_data['assert_type'] == 'varCompare':
+                        ok, detail = evaluate_var_comparison(step_data['assert_value'], self.runtime_vars)
+                        step_result['success'] = ok
+                        if not ok:
+                            step_result['error'] = f"✗ 断言失败: 表达式 '{step_data['assert_value']}' 不成立\n  - {detail}"
+                        else:
+                            print(f"  ✓ 表达式断言通过: {step_data['assert_value']} -> {detail}")
 
             else:
                 if step_data['action_type'] == 'openUrl':
