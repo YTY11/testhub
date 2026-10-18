@@ -1534,7 +1534,7 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                                         'action_type': action_type,
                                         'description': description or '',
                                         'success': success,
-                                        'error': None if success else step_log
+                                        'error': None if success else step_log, 'log': step_log
                                     })
 
                                     if not success:
@@ -1786,7 +1786,7 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                                             'action_type': action_type,
                                             'description': description or '',
                                             'success': success,
-                                            'error': None if success else step_log
+                                            'error': None if success else step_log, 'log': step_log
                                         })
 
                                         # 如果步骤失败,保存截图
@@ -2447,7 +2447,7 @@ class UiScheduledTaskViewSet(viewsets.ModelViewSet):
                                                 'action_type': action_type,
                                                 'description': step_info['description'] or '',
                                                 'success': success,
-                                                'error': None if success else step_log
+                                                'error': None if success else step_log, 'log': step_log
                                             })
 
                                             if not success:
@@ -2526,7 +2526,7 @@ class UiScheduledTaskViewSet(viewsets.ModelViewSet):
                                                     'action_type': action_type,
                                                     'description': step_info['description'] or '',
                                                     'success': success,
-                                                    'error': None if success else step_log
+                                                    'error': None if success else step_log, 'log': step_log
                                                 })
 
                                                 if not success:

@@ -327,6 +327,9 @@
                           <el-icon><WarningFilled /></el-icon>
                           <pre class="error-message">{{ step.error }}</pre>
                         </div>
+                        <div v-if="step.log" class="log-success">
+                          <pre class="step-log">{{ step.log }}</pre>
+                        </div>
                       </div>
                     </div>
                     <el-empty v-else :description="t('uiAutomation.testCase.noLogs')" />
@@ -1716,6 +1719,27 @@ onMounted(async () => {
 .log-desc {
   color: #909399;
   font-size: 14px;
+}
+
+/* 步骤日志正文（成功步骤的详细输出，如 eval 执行脚本的"返回"） */
+.log-success {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #f4f7ff;
+  border-radius: 4px;
+  border-left: 3px solid #67c23a;
+}
+
+.step-log {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: Consolas, Monaco, 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #303133;
+  max-height: 240px;
+  overflow-y: auto;
 }
 
 .log-error {

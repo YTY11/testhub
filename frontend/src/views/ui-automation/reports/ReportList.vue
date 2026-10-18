@@ -232,6 +232,9 @@
                 <el-icon><WarningFilled /></el-icon>
                 {{ step.error }}
               </div>
+              <div v-if="step.log" class="log-success">
+                {{ step.log }}
+              </div>
             </div>
           </div>
           <!-- 执行截图（成功用例也展示，用于确认执行结果） -->
@@ -262,6 +265,9 @@
                   <div v-if="step.error" class="log-error">
                     <el-icon><WarningFilled /></el-icon>
                     {{ step.error }}
+                  </div>
+                  <div v-if="step.log" class="log-success">
+                    {{ step.log }}
                   </div>
                 </div>
               </div>
@@ -792,6 +798,20 @@ onMounted(async () => {
         border-radius: 4px;
         margin-top: 8px;
         font-size: 14px;
+      }
+
+      .log-success {
+        margin-top: 8px;
+        padding: 8px 12px;
+        background: #f4f7ff;
+        border-radius: 4px;
+        border-left: 3px solid #67c23a;
+        font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+        font-size: 12px;
+        line-height: 1.6;
+        color: #303133;
+        white-space: pre-wrap;
+        word-break: break-all;
       }
     }
   }
