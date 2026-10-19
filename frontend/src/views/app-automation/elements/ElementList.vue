@@ -288,6 +288,12 @@ const loadElements = async () => {
     const res = await getAppElementList(params)
     elements.value = res.data.results || []
     total.value = res.data.count || 0
+
+    // 删除最后一页数据后自动回退页码，避免仍请求已删除的空页
+    if ((!elements.value || elements.value.length === 0) && currentPage.value > 1) {
+      currentPage.value -= 1
+      return loadElements()
+    }
   } catch (error) {
     ElMessage.error(t('appAutomation.element.messages.loadFailed') + ': ' + (error.message || t('appAutomation.element.messages.unknownError')))
   } finally {

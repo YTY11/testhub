@@ -189,6 +189,12 @@ async function loadProjects() {
     const res = await getAppProjects(params)
     projects.value = res.data.results || res.data || []
     pagination.total = res.data.count || projects.value.length
+
+    // 删除最后一页数据后自动回退页码，避免仍请求已删除的空页
+    if ((!projects.value || projects.value.length === 0) && pagination.current > 1) {
+      pagination.current -= 1
+      return loadProjects()
+    }
   } catch { ElMessage.error(t('appAutomation.project.messages.loadFailed')) }
   finally { loading.value = false }
 }

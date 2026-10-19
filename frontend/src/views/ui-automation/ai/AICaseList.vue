@@ -134,6 +134,12 @@ const loadCases = async () => {
 
     cases.value = response.data.results || []
     total.value = response.data.count || 0
+
+    // 删除最后一页数据后自动回退页码，避免仍请求已删除的空页
+    if ((!cases.value || cases.value.length === 0) && pagination.currentPage > 1) {
+      pagination.currentPage -= 1
+      return loadCases()
+    }
   } catch (error) {
     console.error('获取用例列表失败:', error)
     ElMessage.error(t('uiAutomation.ai.caseList.messages.loadFailed'))

@@ -259,6 +259,12 @@ const fetchTestCases = async () => {
     const response = await api.get('/testcases/', { params })
     testcases.value = response.data.results || []
     total.value = response.data.count || 0
+
+    // 删除最后一页数据后自动回退页码，避免仍请求已删除的空页
+    if ((!testcases.value || testcases.value.length === 0) && currentPage.value > 1) {
+      currentPage.value -= 1
+      return fetchTestCases()
+    }
   } catch (error) {
     ElMessage.error(t('testcase.fetchListFailed'))
   } finally {

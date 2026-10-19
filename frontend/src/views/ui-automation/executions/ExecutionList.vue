@@ -502,6 +502,12 @@ const loadExecutions = async () => {
     const response = await getTestCaseExecutions(params)
     executions.value = response.data.results || response.data
     total.value = response.data.count || executions.value.length
+
+    // 删除最后一页数据后自动回退页码，避免仍请求已删除的空页
+    if ((!executions.value || executions.value.length === 0) && pagination.currentPage > 1) {
+      pagination.currentPage -= 1
+      return loadExecutions()
+    }
   } catch (error) {
     ElMessage.error(t('uiAutomation.execution.messages.loadFailed'))
     console.error('获取执行列表失败:', error)

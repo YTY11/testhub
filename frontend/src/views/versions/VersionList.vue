@@ -221,6 +221,12 @@ const fetchVersions = async () => {
     const response = await api.get('/versions/', { params })
     versions.value = response.data.results || []
     total.value = response.data.count || 0
+
+    // 删除最后一页数据后自动回退页码，避免仍请求已删除的空页
+    if ((!versions.value || versions.value.length === 0) && currentPage.value > 1) {
+      currentPage.value -= 1
+      return fetchVersions()
+    }
   } catch (error) {
     ElMessage.error(t('version.fetchListFailed'))
   } finally {

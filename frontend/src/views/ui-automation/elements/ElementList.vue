@@ -378,6 +378,12 @@ const loadElements = async () => {
     // 提取所有页面名称用于筛选
     const pageNames = [...new Set(elements.value.map(el => el.page))]
     pages.value = pageNames.filter(name => name)
+
+    // 删除最后一页数据后自动回退页码，避免仍请求已删除的空页
+    if ((!elements.value || elements.value.length === 0) && pagination.currentPage > 1) {
+      pagination.currentPage -= 1
+      return loadElements()
+    }
   } catch (error) {
     ElMessage.error(t('uiAutomation.element.messages.loadFailed'))
     console.error('获取元素列表失败:', error)

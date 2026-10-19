@@ -319,6 +319,12 @@ const fetchProjects = async () => {
     const res = await api.get('/projects/', { params })
     projects.value = res.data.results
     total.value = res.data.count
+
+    // 删除最后一页数据后自动回退页码，避免仍请求已删除的空页
+    if ((!projects.value || projects.value.length === 0) && currentPage.value > 1) {
+      currentPage.value -= 1
+      return fetchProjects()
+    }
   } catch (e) {
     ElMessage.error(t('project.fetchListFailed'))
   } finally {

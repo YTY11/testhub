@@ -285,6 +285,12 @@ const loadProjects = async () => {
     })
     projects.value = response.data.results
     total.value = response.data.count
+
+    // 删除最后一页数据后自动回退页码，避免仍请求已删除的空页
+    if ((!projects.value || projects.value.length === 0) && currentPage.value > 1) {
+      currentPage.value -= 1
+      return loadProjects()
+    }
   } catch (error) {
     ElMessage.error(t('apiTesting.messages.error.loadProjects'))
     console.error(error)

@@ -373,6 +373,12 @@ const loadSuites = async () => {
       suites.value = response.data
       total.value = response.data.length
     }
+
+    // 删除最后一页数据后自动回退页码，避免仍请求已删除的空页
+    if ((!suites.value || suites.value.length === 0) && pagination.currentPage > 1) {
+      pagination.currentPage -= 1
+      return loadSuites()
+    }
   } catch (error) {
     console.error('获取测试套件列表失败:', error)
     ElMessage.error(t('uiAutomation.suite.messages.loadFailed'))

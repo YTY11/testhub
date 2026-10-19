@@ -394,6 +394,12 @@ const loadReports = async () => {
       reports.value = response.data
       total.value = response.data.length
     }
+
+    // 删除最后一页数据后自动回退页码，避免仍请求已删除的空页
+    if ((!reports.value || reports.value.length === 0) && pagination.currentPage > 1) {
+      pagination.currentPage -= 1
+      return loadReports()
+    }
   } catch (error) {
     console.error('Failed to load test reports:', error)
     ElMessage.error(t('uiAutomation.report.messages.loadFailed'))

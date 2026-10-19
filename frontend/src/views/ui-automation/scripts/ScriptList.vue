@@ -219,6 +219,12 @@ const loadScripts = async () => {
       scripts.value = response.data
       total.value = response.data.length
     }
+
+    // 删除最后一页数据后自动回退页码，避免仍请求已删除的空页
+    if ((!scripts.value || scripts.value.length === 0) && currentPage.value > 1) {
+      currentPage.value -= 1
+      return loadScripts()
+    }
   } catch (error) {
     ElMessage.error(t('uiAutomation.script.messages.loadScriptsFailed'))
     console.error('获取脚本列表失败:', error)

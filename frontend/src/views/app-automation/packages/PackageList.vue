@@ -138,6 +138,12 @@ const loadPackages = async () => {
     const payload = data.success !== undefined ? data.data : data
     packages.value = payload?.results || payload || []
     total.value = payload?.count || packages.value.length || 0
+
+    // 删除最后一页数据后自动回退页码，避免仍请求已删除的空页
+    if ((!packages.value || packages.value.length === 0) && currentPage.value > 1) {
+      currentPage.value -= 1
+      return loadPackages()
+    }
   } catch (error) {
     console.error('加载应用包名失败:', error)
     packages.value = []

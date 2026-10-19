@@ -495,6 +495,12 @@ export default {
           this.tasks = response.data || []
           this.pagination.total = this.tasks.length
         }
+
+        // 删除最后一页数据后自动回退页码，避免仍请求已删除的空页
+        if ((!this.tasks || this.tasks.length === 0) && this.pagination.currentPage > 1) {
+          this.pagination.currentPage -= 1
+          return this.loadTasks()
+        }
         
         // 更新统计数据（统计所有数据，不只是当前页）
         this.updateStats()

@@ -373,6 +373,12 @@ const loadProjects = async () => {
     const response = await getUiProjects(params)
     projects.value = response.data.results || response.data
     total.value = response.data.count || projects.value.length
+
+    // 删除最后一页数据后自动回退页码，避免仍请求已删除的空页
+    if ((!projects.value || projects.value.length === 0) && pagination.currentPage > 1) {
+      pagination.currentPage -= 1
+      return loadProjects()
+    }
   } catch (error) {
     ElMessage.error(t('uiAutomation.project.messages.loadFailed'))
     console.error('获取项目列表失败:', error)
