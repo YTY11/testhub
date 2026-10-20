@@ -335,6 +335,10 @@ const deleteScript = async (script) => {
 
     await deleteTestScript(script.id)
     ElMessage.success(t('uiAutomation.script.messages.deleteSuccess'))
+    // 删除最后一笔后若本页已空，先回退一页再加载，避免请求已不存在的页码报错
+    if (currentPage.value > 1 && scripts.value.length <= 1) {
+      currentPage.value -= 1
+    }
 
     // 重新加载脚本列表
     await loadScripts()

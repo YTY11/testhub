@@ -4,6 +4,7 @@ Playwright自动化测试执行引擎
 """
 import asyncio
 import base64
+import os
 import re
 import time
 from datetime import datetime
@@ -11,6 +12,7 @@ from typing import Dict, List, Optional, Tuple
 from playwright.async_api import async_playwright, Page, Browser, BrowserContext, TimeoutError as PlaywrightTimeout
 import logging
 from .variable_resolver import resolve_variables
+from .concurrency import acquire_ui_engine, release_ui_engine
 
 logger = logging.getLogger(__name__)
 
@@ -299,6 +301,11 @@ class PlaywrightTestEngine:
     async def start(self):
         """启动浏览器"""
         try:
+            # 并发控制：同时只允许有限个 UI 测试浏览器，防止多浏览器并发打满服务器 CPU
+            if not acquire_ui_engine():
+                raise RuntimeError("当前已有其他 UI 测试正在执行（并发限制），请稍候再试")
+            self._sem_held = True
+
             self.playwright = await async_playwright().start()
 
             # 根据浏览器类型选择启动方式
@@ -343,6 +350,10 @@ class PlaywrightTestEngine:
             logger.info(f"浏览器启动成功: {self.browser_type}, headless={self.headless}")
 
         except Exception as e:
+            # 启动失败也要释放并发名额，避免名额被长期占用
+            if getattr(self, '_sem_held', False):
+                self._sem_held = False
+                release_ui_engine()
             logger.error(f"启动浏览器失败: {str(e)}")
             raise
 
@@ -360,6 +371,18 @@ class PlaywrightTestEngine:
             logger.info("浏览器已关闭")
         except Exception as e:
             logger.error(f"关闭浏览器失败: {str(e)}")
+        finally:
+            # 清理可能残留的浏览器子进程（服务器 Linux 环境），防止异常后累积占用 CPU
+            if os.name == 'posix':
+                try:
+                    import subprocess
+                    subprocess.run(['pkill', '-f', 'ms-playwright'], capture_output=True)
+                except Exception:
+                    pass
+            # 释放并发名额
+            if getattr(self, '_sem_held', False):
+                self._sem_held = False
+                release_ui_engine()
 
     def _build_locator(self, page, locator_strategy, locator_value):
         """根据定位策略在指定 page/frame 上构建定位器（支持跨 iframe 复用）"""

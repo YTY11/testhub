@@ -452,6 +452,10 @@ const deleteProject = async (id) => {
 
     await deleteUiProject(id)
     ElMessage.success(t('uiAutomation.project.messages.deleteSuccess'))
+    // 删除最后一笔后若本页已空，先回退一页再加载，避免请求已不存在的页码报错
+    if (pagination.currentPage > 1 && projects.value.length <= 1) {
+      pagination.currentPage -= 1
+    }
     loadProjects()
   } catch (error) {
     if (error === 'cancel') return

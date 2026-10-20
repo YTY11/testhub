@@ -17,6 +17,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementNotInteractableException
 import logging
+from .concurrency import acquire_ui_engine, release_ui_engine
 
 logger = logging.getLogger(__name__)
 
@@ -330,6 +331,11 @@ class SeleniumTestEngine:
     def start(self):
         """启动浏览器"""
         try:
+            # 并发控制：同时只允许有限个 UI 测试浏览器，防止多浏览器并发打满服务器 CPU
+            if not acquire_ui_engine():
+                raise RuntimeError("当前已有其他 UI 测试正在执行（并发限制），请稍候再试")
+            self._sem_held = True
+
             import os
             # 配置webdriver_manager使用本地缓存，避免每次下载
             os.environ['WDM_LOG_LEVEL'] = '0'  # 减少日志输出
@@ -507,6 +513,10 @@ class SeleniumTestEngine:
             logger.info(f"浏览器启动成功: {self.browser_type}, headless={self.headless}")
 
         except Exception as e:
+            # 启动失败也要释放并发名额，避免名额被长期占用
+            if getattr(self, '_sem_held', False):
+                self._sem_held = False
+                release_ui_engine()
             logger.error(f"启动浏览器失败: {str(e)}")
             raise
 
@@ -518,6 +528,18 @@ class SeleniumTestEngine:
             logger.info("浏览器已关闭")
         except Exception as e:
             logger.error(f"关闭浏览器失败: {str(e)}")
+        finally:
+            # 清理可能残留的驱动/浏览器子进程（服务器 Linux 环境），防止异常后累积占用 CPU
+            if os.name == 'posix':
+                try:
+                    import subprocess
+                    subprocess.run(['pkill', '-f', 'chromedriver|geckodriver'], capture_output=True)
+                except Exception:
+                    pass
+            # 释放并发名额
+            if getattr(self, '_sem_held', False):
+                self._sem_held = False
+                release_ui_engine()
 
     def _get_locator(self, locator_strategy: str, locator_value: str) -> Tuple[str, str]:
         """

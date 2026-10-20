@@ -346,7 +346,7 @@ const rerunFormData = reactive({
   testCaseId: null,
   engine: 'playwright',
   browser: 'chrome',
-  headless: false
+  headless: true  // 默认无头（省 CPU），需要 VNC 实时观看时再切换为有头
 })
 
 // 格式化日期时间
@@ -567,6 +567,10 @@ const handleDelete = (row) => {
     try {
       await deleteTestCaseExecution(row.id)
       ElMessage.success(t('uiAutomation.execution.messages.deleteSuccess'))
+      // 删除最后一笔后若本页已空，先回退一页再加载，避免请求已不存在的页码报错
+      if (pagination.currentPage > 1 && executions.value.length <= 1) {
+        pagination.currentPage -= 1
+      }
       loadExecutions()
     } catch (error) {
       console.error('删除失败:', error)
@@ -585,9 +589,14 @@ const handleBatchDelete = () => {
     type: 'warning'
   }).then(async () => {
     try {
+      const delCount = selectedIds.value.length
       await batchDeleteTestCaseExecutions(selectedIds.value)
       ElMessage.success(t('uiAutomation.execution.messages.batchDeleteSuccess'))
       selectedIds.value = []
+      // 删除最后一页最后一笔后，先回退一页再加载，避免请求已不存在的页码报错
+      if (pagination.currentPage > 1 && delCount >= executions.value.length) {
+        pagination.currentPage -= 1
+      }
       loadExecutions()
     } catch (error) {
       console.error('批量删除失败:', error)

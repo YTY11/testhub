@@ -581,6 +581,10 @@ export default {
 
         // 清空选择并重新加载列表
         this.selectedTasks = []
+        // 删除最后一页最后一笔后，先回退一页再加载，避免请求已不存在的页码报错
+        if (this.pagination.currentPage > 1 && successCount >= this.tasks.length) {
+          this.pagination.currentPage -= 1
+        }
         this.loadTasks()
 
       } catch (error) {

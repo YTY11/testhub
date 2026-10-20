@@ -361,7 +361,7 @@ const taskForm = reactive({
   test_cases: [],
   engine: 'playwright',
   browser: 'chrome',
-  headless: false,
+  headless: true,  // 默认无头（省 CPU），定时任务一般无需有头观看
   notify_on_success: false,
   notify_on_failure: false,
   notification_type: '',
@@ -492,7 +492,7 @@ const resetTaskForm = () => {
     test_cases: [],
     engine: 'playwright',
     browser: 'chrome',
-    headless: false,
+    headless: true,  // 默认无头（省 CPU）
     notify_on_success: false,
     notify_on_failure: false,
     notification_type: '',

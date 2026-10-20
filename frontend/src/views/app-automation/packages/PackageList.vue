@@ -212,6 +212,10 @@ const handleDelete = (row) => {
     try {
       await deletePackage(row.id)
       ElMessage.success(t('appAutomation.common.deleteSuccess'))
+      // 删除最后一笔后若本页已空，先回退一页再加载，避免请求已不存在的页码报错
+      if (currentPage.value > 1 && packages.value.length <= 1) {
+        currentPage.value -= 1
+      }
       loadPackages()
     } catch (error) {
       console.error('删除应用包名失败:', error)

@@ -818,7 +818,7 @@ class TestSuiteViewSet(viewsets.ModelViewSet):
 
         engine = request.data.get('engine', 'playwright')
         browser = request.data.get('browser', 'chrome')
-        headless = request.data.get('headless', False)
+        headless = request.data.get('headless', True)
 
         if engine == 'selenium':
             from .selenium_engine import SeleniumTestEngine
@@ -1310,7 +1310,7 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                 status='running',
                 engine=engine_type,
                 browser=request.data.get('browser', 'chrome'),
-                headless=request.data.get('headless', False),
+                headless=request.data.get('headless', True),
                 created_by=request.user,
                 started_at=timezone.now()
             )
@@ -1427,7 +1427,7 @@ class TestCaseViewSet(viewsets.ModelViewSet):
             execution_logs.append(f"执行时间: {timezone.now().strftime('%Y-%m-%d %H:%M:%S')}")
             execution_logs.append(f"执行引擎: {engine_type.upper()}")
             execution_logs.append(f"浏览器: {request.data.get('browser', 'chrome').capitalize()}")
-            headless_mode = request.data.get('headless', False)
+            headless_mode = request.data.get('headless', True)
             mode_text = "无头模式" if headless_mode else "有头模式"
             execution_logs.append(f"执行模式: {mode_text}")
             execution_logs.append(f"执行用户: {request.user.username}")
@@ -1446,7 +1446,7 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                 def run_test_selenium():
                     """使用Selenium执行测试"""
                     browser_type = request.data.get('browser', 'chrome')
-                    headless = request.data.get('headless', False)
+                    headless = request.data.get('headless', True)
 
                     # 创建Selenium引擎实例
                     engine = SeleniumTestEngine(browser_type=browser_type, headless=headless)
@@ -1653,7 +1653,7 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                             'edge': 'chromium'
                         }
                         browser_type = browser_map.get(request.data.get('browser', 'chrome'), 'chromium')
-                        headless = request.data.get('headless', False)
+                        headless = request.data.get('headless', True)
 
                         # 创建Playwright引擎实例
                         engine = PlaywrightTestEngine(browser_type=browser_type, headless=headless)
@@ -1918,11 +1918,17 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                             await engine.stop()
                             execution_logs.append("✓ 浏览器已关闭")
 
-                    # 在新的事件循环中运行测试
+                    # 在新的事件循环中运行测试（带整体超时，防止浏览器挂起导致线程/进程永久占用、CPU 累积）
+                    from django.conf import settings as _dj_settings
+                    _max_seconds = int(getattr(_dj_settings, 'UI_TEST_MAX_EXECUTION_SECONDS', 600))
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
                     try:
-                        loop.run_until_complete(run_test())
+                        loop.run_until_complete(asyncio.wait_for(run_test(), timeout=_max_seconds))
+                    except asyncio.TimeoutError:
+                        execution_logs.append(f"✗ 执行超时（超过 {_max_seconds} 秒），已强制终止并关闭浏览器")
+                        execution_result['status'] = 'failed'
+                        execution_result['error_message'] = f"执行超时（超过 {_max_seconds} 秒）"
                     finally:
                         loop.close()
 

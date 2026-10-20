@@ -212,6 +212,10 @@ const deleteCase = async (id) => {
 
     await deleteAICase(id)
     ElMessage.success(t('uiAutomation.ai.caseList.messages.deleteSuccess'))
+    // 删除最后一笔后若本页已空，先回退一页再加载，避免请求已不存在的页码报错
+    if (pagination.currentPage > 1 && cases.value.length <= 1) {
+      pagination.currentPage -= 1
+    }
     loadCases()
   } catch (error) {
     if (error !== 'cancel') {

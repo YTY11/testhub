@@ -491,6 +491,10 @@ const deleteReport = async (report) => {
 
     await deleteTestExecution(report.id)
     ElMessage.success(t('uiAutomation.report.messages.deleteSuccess'))
+    // 删除最后一笔后若本页已空，先回退一页再加载，避免请求已不存在的页码报错
+    if (pagination.currentPage > 1 && reports.value.length <= 1) {
+      pagination.currentPage -= 1
+    }
     await loadReports()
   } catch (error) {
     if (error !== 'cancel') {

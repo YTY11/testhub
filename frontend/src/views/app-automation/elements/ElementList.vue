@@ -414,8 +414,14 @@ const handleBatchDelete = async () => {
       await apiDeleteAppElement(element.id)
     }
 
+    const delCount = selectedElements.value.length
+
     ElMessage.success(t('appAutomation.element.messages.batchDeleteSuccess'))
     selectedElements.value = []
+    // 删除最后一页最后一笔后，先回退一页再加载，避免请求已不存在的页码报错
+    if (currentPage.value > 1 && delCount >= elements.value.length) {
+      currentPage.value -= 1
+    }
     loadElements()
   } catch (error) {
     if (error !== 'cancel') {
@@ -439,6 +445,10 @@ const handleDelete = async (element) => {
 
     await apiDeleteAppElement(element.id)
     ElMessage.success(t('appAutomation.common.deleteSuccess'))
+    // 删除最后一笔后若本页已空，先回退一页再加载，避免请求已不存在的页码报错
+    if (currentPage.value > 1 && elements.value.length <= 1) {
+      currentPage.value -= 1
+    }
     loadElements()
   } catch (error) {
     if (error !== 'cancel') {

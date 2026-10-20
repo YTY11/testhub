@@ -434,6 +434,10 @@ const deleteProject = async (row) => {
     })
     await api.delete(`/projects/${row.id}/`)
     ElMessage.success(t('project.deleteSuccess'))
+    // 删除最后一笔后若本页已空，先回退一页再加载，避免请求已不存在的页码报错
+    if (currentPage.value > 1 && projects.value.length <= 1) {
+      currentPage.value -= 1
+    }
     fetchProjects()
     fetchStats()
   } catch (e) {

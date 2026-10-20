@@ -309,6 +309,10 @@ const deleteTestCase = async (testcase) => {
     
     await api.delete(`/testcases/${testcase.id}/`)
     ElMessage.success(t('testcase.deleteSuccess'))
+    // 删除最后一笔后若本页已空，先回退一页再加载，避免请求已不存在的页码报错
+    if (currentPage.value > 1 && testcases.value.length <= 1) {
+      currentPage.value -= 1
+    }
     fetchTestCases()
   } catch (error) {
     if (error !== 'cancel') {
@@ -373,6 +377,10 @@ const batchDeleteTestCases = async () => {
 
     // 清空选择并重新加载列表
     selectedTestCases.value = []
+    // 删除最后一页最后一笔后，先回退一页再加载，避免请求已不存在的页码报错
+    if (currentPage.value > 1 && successCount >= testcases.value.length) {
+      currentPage.value -= 1
+    }
     fetchTestCases()
 
   } catch (error) {

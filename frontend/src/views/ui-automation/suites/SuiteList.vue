@@ -323,7 +323,7 @@ const testCaseSearchText = ref('')
 const runConfig = reactive({
   engine: 'playwright',
   browser: 'chrome',
-  headless: false
+  headless: true  // 默认无头（省 CPU），需要 VNC 实时观看时再切换为有头
 })
 const currentRunningSuite = ref(null)
 
@@ -525,6 +525,10 @@ const deleteSuite = async (id) => {
 
     await deleteTestSuite(id)
     ElMessage.success(t('uiAutomation.suite.messages.deleteSuccess'))
+    // 删除最后一笔后若本页已空，先回退一页再加载，避免请求已不存在的页码报错
+    if (pagination.currentPage > 1 && suites.value.length <= 1) {
+      pagination.currentPage -= 1
+    }
     await loadSuites()
   } catch (error) {
     if (error !== 'cancel') {
