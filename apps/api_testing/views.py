@@ -262,7 +262,22 @@ class ApiRequestViewSet(viewsets.ModelViewSet):
                         body_data = body_content
                 else:
                     body_data = body_content
-            
+
+            # 执行请求前脚本（可修改 params/headers/body_data 实现参数加密）
+            from .utils import run_pre_request_script
+            if api_request.pre_request_script and api_request.pre_request_script.strip():
+                _pre_ctx = run_pre_request_script(api_request.pre_request_script, {
+                    'params': params,
+                    'headers': headers,
+                    'body': body_data,
+                    'url': url,
+                    'variables': variables,
+                })
+                params = _pre_ctx.get('params', params)
+                headers = _pre_ctx.get('headers', headers)
+                body_data = _pre_ctx.get('body', body_data)
+                url = _pre_ctx.get('url', url)
+
             # 执行请求
             start_time = time.time()
 
@@ -290,7 +305,23 @@ class ApiRequestViewSet(viewsets.ModelViewSet):
             end_time = time.time()
             
             response_time = (end_time - start_time) * 1000  # 转换为毫秒
-            
+
+            # 执行请求后脚本（可解密响应，把解密结果赋给 decrypted_body 供前端展示）
+            decrypted_body = None
+            from .utils import run_post_request_script
+            if api_request.post_request_script and api_request.post_request_script.strip():
+                try:
+                    _resp_json = response.json() if response.headers.get('content-type', '').startswith('application/json') else None
+                except Exception:
+                    _resp_json = None
+                _post_ctx = run_post_request_script(api_request.post_request_script, {
+                    'response_text': response.text,
+                    'response_json': _resp_json,
+                    'status_code': response.status_code,
+                    'variables': variables,
+                })
+                decrypted_body = _post_ctx.get('decrypted_body')
+
             # 执行断言验证
             assertions = request.data.get('assertions', api_request.assertions) or []
             for assertion in assertions:
@@ -312,7 +343,8 @@ class ApiRequestViewSet(viewsets.ModelViewSet):
                 response_data={
                     'headers': dict(response.headers),
                     'body': response.text,
-                    'json': response.json() if response.headers.get('content-type', '').startswith('application/json') else None
+                    'json': response.json() if response.headers.get('content-type', '').startswith('application/json') else None,
+                    'decrypted': decrypted_body
                 },
                 status_code=response.status_code,
                 response_time=response_time,

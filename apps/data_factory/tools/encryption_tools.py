@@ -223,6 +223,63 @@ class EncryptionTools:
             return {'error': 'AES解密失败，请检查密码和密文！'}
 
     @staticmethod
+    def aes_pkcs7_encrypt(text: str, key: str) -> Dict[str, Any]:
+        """AES-256-CBC-PKCS7 加密，兼容常见业务 SDK（Java AES256CipherPkcs7 / JS crypto-js）。
+
+        算法规格：
+        - 分组模式：CBC
+        - 填充：PKCS7
+        - 密钥：key 字符串的 UTF-8 字节，不足 32 字节右侧补 0，超出截断为 32 字节（AES-256）
+        - IV：16 字节全 0（对应 crypto-js iv = hex '0000000000000000'）
+        - 输出：Base64（对应 crypto-js .toString()）
+        """
+        if not CRYPTO_AVAILABLE:
+            return {'error': 'pycryptodome模块未安装，请先安装！'}
+        try:
+            key_bytes = key.encode('utf-8')
+            if len(key_bytes) < 32:
+                key_bytes = key_bytes.ljust(32, b'\x00')
+            else:
+                key_bytes = key_bytes[:32]
+            iv = b'\x00' * 16
+            cipher = AES.new(key_bytes, AES.MODE_CBC, iv)
+            ct_bytes = cipher.encrypt(pad(text.encode('utf-8'), AES.block_size))
+            return {
+                'result': base64.b64encode(ct_bytes).decode('utf-8'),
+                'algorithm': 'AES-256-CBC-PKCS7'
+            }
+        except Exception as e:
+            logger.error(f"AES-256-CBC-PKCS7 加密失败: {str(e)}")
+            return {'error': f'AES-256-CBC-PKCS7 加密失败: {str(e)}'}
+
+    @staticmethod
+    def aes_pkcs7_decrypt(encrypted_text: str, key: str) -> Dict[str, Any]:
+        """AES-256-CBC-PKCS7 解密，与 aes_pkcs7_encrypt 对应。
+
+        encrypted_text 为 Base64 密文，key 与加密时一致（UTF-8 字节，补/截为 32 字节）。
+        """
+        if not CRYPTO_AVAILABLE:
+            return {'error': 'pycryptodome模块未安装，请先安装！'}
+        try:
+            ct_bytes = base64.b64decode(encrypted_text.encode('utf-8'))
+            key_bytes = key.encode('utf-8')
+            if len(key_bytes) < 32:
+                key_bytes = key_bytes.ljust(32, b'\x00')
+            else:
+                key_bytes = key_bytes[:32]
+            iv = b'\x00' * 16
+            cipher = AES.new(key_bytes, AES.MODE_CBC, iv)
+            pt_bytes = unpad(cipher.decrypt(ct_bytes), AES.block_size)
+            return {
+                'result': pt_bytes.decode('utf-8'),
+                'algorithm': 'AES-256-CBC-PKCS7',
+                'success': True
+            }
+        except Exception as e:
+            logger.error(f"AES-256-CBC-PKCS7 解密失败: {str(e)}")
+            return {'error': f'AES-256-CBC-PKCS7 解密失败: {str(e)}'}
+
+    @staticmethod
     def password_strength(password: str) -> Dict[str, Any]:
         """密码强度分析"""
         try:

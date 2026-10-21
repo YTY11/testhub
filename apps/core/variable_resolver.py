@@ -103,6 +103,8 @@ class VariableResolver:
             'hash_comparison': self._call_encryption_tool,
             'aes_encrypt': self._call_encryption_tool,
             'aes_decrypt': self._call_encryption_tool,
+            'aes_pkcs7_encrypt': self._call_encryption_tool,
+            'aes_pkcs7_decrypt': self._call_encryption_tool,
             
             # Crontab工具
             'generate_expression': self._call_crontab_tool,
@@ -477,6 +479,8 @@ class VariableResolver:
             'hash_comparison': EncryptionTools.hash_comparison,
             'aes_encrypt': EncryptionTools.aes_encrypt,
             'aes_decrypt': EncryptionTools.aes_decrypt,
+            'aes_pkcs7_encrypt': EncryptionTools.aes_pkcs7_encrypt,
+            'aes_pkcs7_decrypt': EncryptionTools.aes_pkcs7_decrypt,
         }
         
         # 设置默认参数
@@ -489,6 +493,10 @@ class VariableResolver:
             kwargs = {'text': args[0] if len(args) > 0 else '', 'password': args[1] if len(args) > 1 else '', 'mode': args[2] if len(args) > 2 else 'CBC'}
         elif func_name == 'aes_decrypt':
             kwargs = {'encrypted_text': args[0] if len(args) > 0 else '', 'password': args[1] if len(args) > 1 else '', 'mode': args[2] if len(args) > 2 else 'CBC'}
+        elif func_name == 'aes_pkcs7_encrypt':
+            kwargs = {'text': args[0] if len(args) > 0 else '', 'key': args[1] if len(args) > 1 else ''}
+        elif func_name == 'aes_pkcs7_decrypt':
+            kwargs = {'encrypted_text': args[0] if len(args) > 0 else '', 'key': args[1] if len(args) > 1 else ''}
         
         if func_name in tool_mapping:
             result = tool_mapping[func_name](**kwargs)

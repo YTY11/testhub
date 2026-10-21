@@ -1,8 +1,66 @@
 import json
 import time
+import logging
 from django.utils import timezone
 from .models import RequestHistory
 from .variable_resolver import VariableResolver
+
+logger = logging.getLogger(__name__)
+
+
+def _build_script_helpers():
+    """为请求前/请求后脚本提供工具函数（兼容业务 SDK 的 AES-256-CBC-PKCS7，key=UTF-8，IV=0）。"""
+    from apps.data_factory.tools.encryption_tools import EncryptionTools
+
+    def aes_encrypt(text, key):
+        r = EncryptionTools.aes_pkcs7_encrypt(text, key)
+        return r.get('result', r.get('error', ''))
+
+    def aes_decrypt(text, key):
+        r = EncryptionTools.aes_pkcs7_decrypt(text, key)
+        return r.get('result', r.get('error', ''))
+
+    return {'aes_encrypt': aes_encrypt, 'aes_decrypt': aes_decrypt}
+
+
+def run_pre_request_script(script, context):
+    """执行请求前脚本（Python）。
+
+    上下文可读写：params(dict)、headers(dict)、body(dict|str)、url(str)、variables(dict)，
+    并内置 json、urllib.parse、aes_encrypt、aes_decrypt。脚本可直接修改这些变量实现参数加密。
+    """
+    if not script or not script.strip():
+        return context
+    ctx = dict(context)
+    ctx['json'] = json
+    from urllib import parse as _urlparse
+    ctx['urllib'] = _urlparse
+    ctx.update(_build_script_helpers())
+    try:
+        exec(compile(script, '<pre_request_script>', 'exec'), {'__builtins__': __builtins__}, ctx)
+    except Exception as e:
+        logger.error(f"[请求前脚本] 执行失败: {e}")
+        ctx['script_error'] = str(e)
+    return ctx
+
+
+def run_post_request_script(script, context):
+    """执行请求后脚本（Python）。
+
+    上下文可读：response_text(str)、response_json(dict|None)、status_code(int)、variables(dict)；
+    内置 json、aes_encrypt、aes_decrypt。脚本可把解密结果赋给 decrypted_body，前端将优先展示它。
+    """
+    if not script or not script.strip():
+        return context
+    ctx = dict(context)
+    ctx['json'] = json
+    ctx.update(_build_script_helpers())
+    try:
+        exec(compile(script, '<post_request_script>', 'exec'), {'__builtins__': __builtins__}, ctx)
+    except Exception as e:
+        logger.error(f"[请求后脚本] 执行失败: {e}")
+        ctx['script_error'] = str(e)
+    return ctx
 
 
 def execute_assertions(response, assertions):
@@ -336,7 +394,21 @@ def execute_api_request(api_request, environment, executed_by):
                 body_data = api_request.body.get('data', {})
                 body_data = _replace_variables_in_dict(body_data, variables)
                 body_data = _resolve_variables_in_dict(body_data, resolver)
-        
+
+        # 执行请求前脚本（可修改 params/headers/body_data 实现参数加密）
+        if api_request.pre_request_script and api_request.pre_request_script.strip():
+            _pre_ctx = run_pre_request_script(api_request.pre_request_script, {
+                'params': params,
+                'headers': headers,
+                'body': body_data,
+                'url': url,
+                'variables': variables,
+            })
+            params = _pre_ctx.get('params', params)
+            headers = _pre_ctx.get('headers', headers)
+            body_data = _pre_ctx.get('body', body_data)
+            url = _pre_ctx.get('url', url)
+
         # 执行请求
         start_time = time.time()
         response = requests.request(
@@ -349,7 +421,22 @@ def execute_api_request(api_request, environment, executed_by):
         )
         end_time = time.time()
         response_time = (end_time - start_time) * 1000
-        
+
+        # 执行请求后脚本（可解密响应，把解密结果赋给 decrypted_body 供前端展示）
+        decrypted_body = None
+        if api_request.post_request_script and api_request.post_request_script.strip():
+            try:
+                _resp_json = response.json() if response.headers.get('content-type', '').startswith('application/json') else None
+            except Exception:
+                _resp_json = None
+            _post_ctx = run_post_request_script(api_request.post_request_script, {
+                'response_text': response.text,
+                'response_json': _resp_json,
+                'status_code': response.status_code,
+                'variables': variables,
+            })
+            decrypted_body = _post_ctx.get('decrypted_body')
+
         # 执行断言验证
         assertions = api_request.assertions or []
         for assertion in assertions:
@@ -372,7 +459,8 @@ def execute_api_request(api_request, environment, executed_by):
             response_data={
                 'headers': dict(response.headers),
                 'body': response.text,
-                'json': response.json() if response.headers.get('content-type', '').startswith('application/json') else None
+                'json': response.json() if response.headers.get('content-type', '').startswith('application/json') else None,
+                'decrypted': decrypted_body
             },
             status_code=response.status_code,
             response_time=response_time,
@@ -389,7 +477,8 @@ def execute_api_request(api_request, environment, executed_by):
             'response_data': {
                 'headers': dict(response.headers),
                 'body': response.text,
-                'json': response.json() if response.headers.get('content-type', '').startswith('application/json') else None
+                'json': response.json() if response.headers.get('content-type', '').startswith('application/json') else None,
+                'decrypted': decrypted_body
             }
         }
         

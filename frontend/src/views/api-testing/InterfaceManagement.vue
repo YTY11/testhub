@@ -325,7 +325,7 @@
                     v-model="selectedRequest.pre_request_script"
                     type="textarea"
                     :rows="10"
-                    placeholder="// 请求前脚本，使用JavaScript语法"
+                    placeholder="# 请求前脚本（Python），可修改 params/headers/body 实现参数加密；内置 aes_encrypt(text,key)、aes_decrypt、json、variables"
                   />
                   <div class="script-buttons">
                     <el-button
@@ -356,7 +356,7 @@
                     v-model="selectedRequest.post_request_script"
                     type="textarea"
                     :rows="10"
-                    placeholder="// 请求后脚本和测试，使用JavaScript语法"
+                    placeholder="# 请求后脚本（Python），可读 response_text/response_json，解密结果赋给 decrypted_body 将明文展示；内置 aes_decrypt、json"
                   />
                   <div class="script-buttons">
                     <el-button
@@ -1685,6 +1685,16 @@ const hasBody = computed(() => {
 
 const responseBody = computed(() => {
   if (!response.value || !response.value.response_data) return ''
+
+  // 请求后脚本解密结果优先展示（明文）
+  const decrypted = response.value.response_data.decrypted
+  if (decrypted !== null && decrypted !== undefined && decrypted !== '') {
+    try {
+      return JSON.stringify(JSON.parse(decrypted), null, 2)
+    } catch (e) {
+      return decrypted
+    }
+  }
 
   try {
     if (response.value.response_data.json) {
