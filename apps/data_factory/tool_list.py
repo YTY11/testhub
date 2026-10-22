@@ -66,6 +66,8 @@ TOOL_LIST = [
     {'name': 'hash_comparison', 'display_name': '哈希值比对', 'description': '比对两个哈希值是否相同', 'scenario': 'encryption', 'icon': 'sort'},
     {'name': 'aes_encrypt', 'display_name': 'AES加密', 'description': '使用AES算法加密数据', 'scenario': 'encryption', 'icon': 'lock'},
     {'name': 'aes_decrypt', 'display_name': 'AES解密', 'description': '使用AES算法解密数据', 'scenario': 'encryption', 'icon': 'unlock'},
+    {'name': 'aes_pkcs7_encrypt', 'display_name': 'AES-256-CBC加密(SDK兼容)', 'description': 'AES-256-CBC-PKCS7加密，key=UTF-8、IV=0、输出Base64，兼容业务SDK', 'scenario': 'encryption', 'icon': 'lock'},
+    {'name': 'aes_pkcs7_decrypt', 'display_name': 'AES-256-CBC解密(SDK兼容)', 'description': 'AES-256-CBC-PKCS7解密，与aes_pkcs7_encrypt对应', 'scenario': 'encryption', 'icon': 'unlock'},
     {'name': 'password_strength', 'display_name': '密码强度分析', 'description': '分析密码的强度', 'scenario': 'encryption', 'icon': 'view'},
     {'name': 'generate_salt', 'display_name': '随机盐值', 'description': '生成随机盐值数据', 'scenario': 'encryption', 'icon': 'sort'},
     {'name': 'generate_expression', 'display_name': '生成Crontab表达式', 'description': '生成Crontab定时任务表达式', 'scenario': 'crontab', 'icon': 'clock'},

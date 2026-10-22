@@ -529,6 +529,12 @@
                 <el-option label="ECB" value="ECB" />
               </el-select>
             </el-form-item>
+            <el-form-item v-if="['aes_pkcs7_encrypt', 'aes_pkcs7_decrypt'].includes(currentTool.name)" :label="$t('dataFactory.form.text')">
+              <el-input v-model="toolForm.text" type="textarea" :rows="4" :placeholder="$t('dataFactory.form.inputText')" />
+            </el-form-item>
+            <el-form-item v-if="['aes_pkcs7_encrypt', 'aes_pkcs7_decrypt'].includes(currentTool.name)" label="密钥 Key">
+              <el-input v-model="toolForm.key" type="password" placeholder="加密/解密密钥（UTF-8，不足32字节补0）" />
+            </el-form-item>
             <el-form-item v-if="currentTool.name === 'generate_salt'" :label="$t('dataFactory.form.length')">
               <el-input-number v-model="toolForm.length" :min="8" :max="64" />
             </el-form-item>
@@ -1291,6 +1297,8 @@ const getToolDisplayNameOld = (toolName) => {
     'hash_comparison': '哈希值比对',
     'aes_encrypt': 'AES加密',
     'aes_decrypt': 'AES解密',
+    'aes_pkcs7_encrypt': 'AES-256-CBC加密(SDK兼容)',
+    'aes_pkcs7_decrypt': 'AES-256-CBC解密(SDK兼容)',
     'password_strength': '密码强度分析',
     'generate_salt': '生成盐值',
     'format_json': 'JSON格式化',
@@ -1380,6 +1388,8 @@ const getToolDescriptionOld = (toolName) => {
     'hash_comparison': '比较两个哈希值是否相同',
     'aes_encrypt': '使用AES加密数据',
     'aes_decrypt': '使用AES解密数据',
+    'aes_pkcs7_encrypt': 'AES-256-CBC-PKCS7加密（SDK兼容：key=UTF-8、IV=0、输出Base64）',
+    'aes_pkcs7_decrypt': 'AES-256-CBC-PKCS7解密（SDK兼容）',
     'password_strength': '分析密码强度',
     'generate_salt': '生成加密盐值',
     'format_json': '格式化JSON数据',
@@ -1515,6 +1525,8 @@ const buildInputData = () => {
     if (toolName === 'hash_comparison') return { text: form.text, hash_value: form.hash_value, algorithm: form.algorithm }
     if (toolName === 'aes_encrypt') return { text: form.text, password: form.password, mode: form.mode }
     if (toolName === 'aes_decrypt') return { encrypted_text: form.text, password: form.password, mode: form.mode }
+    if (toolName === 'aes_pkcs7_encrypt') return { text: form.text, key: form.key }
+    if (toolName === 'aes_pkcs7_decrypt') return { encrypted_text: form.text, key: form.key }
     if (toolName === 'password_strength') return { password: form.text }
     if (toolName === 'generate_salt') return { length: form.length }
   }

@@ -330,6 +330,22 @@
                   <div class="script-buttons">
                     <el-button
                       size="small"
+                      :icon="Lock"
+                      @click="insertAesScriptExample('pre_request_script', 'encrypt')"
+                      title="插入字段级AES加密示例（参数值逐个加密）"
+                    >
+                      加密示例
+                    </el-button>
+                    <el-button
+                      size="small"
+                      :icon="Lock"
+                      @click="insertAesScriptExample('pre_request_script', 'encrypt_whole')"
+                      title="插入整体AES加密示例（业务JSON加密为s、设备信息加密为o）"
+                    >
+                      整体加密示例
+                    </el-button>
+                    <el-button
+                      size="small"
                       :icon="MagicStick"
                       @click="openDataFactorySelectorForScript('pre_request_script')"
                       :title="$t('apiTesting.interface.referDataFactory')"
@@ -359,6 +375,14 @@
                     placeholder="# 请求后脚本（Python），可读 response_text/response_json，解密结果赋给 decrypted_body 将明文展示；内置 aes_decrypt、json"
                   />
                   <div class="script-buttons">
+                    <el-button
+                      size="small"
+                      :icon="Unlock"
+                      @click="insertAesScriptExample('post_request_script', 'decrypt')"
+                      title="插入响应AES解密示例（解密 r 字段为明文）"
+                    >
+                      解密示例
+                    </el-button>
                     <el-button
                       size="small"
                       :icon="MagicStick"
@@ -975,7 +999,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Folder, Document, MagicStick, Search, Close, CopyDocument, Delete } from '@element-plus/icons-vue'
+import { Plus, Folder, Document, MagicStick, Search, Close, CopyDocument, Delete, Lock, Unlock } from '@element-plus/icons-vue'
 import api from '@/utils/api'
 import { fetchAll } from '@/utils/pagination'
 import KeyValueEditor from './components/KeyValueEditor.vue'
@@ -2487,6 +2511,53 @@ const openVariableHelper = (field) => {
   currentAssertionField.value = ''
   currentAssertionIndex.value = -1
   showVariableHelper.value = true
+}
+
+// 快速插入 AES 加解密示例到请求前/请求后脚本
+const insertAesScriptExample = (field, type) => {
+  let snippet = ''
+  if (field === 'pre_request_script') {
+    if (type === 'encrypt') {
+      snippet = `# 字段级加密：把某个参数值加密后发送
+# 可用变量：params / headers / body / variables（环境变量）
+# 内置：aes_encrypt(text, key)、aes_decrypt(text, key)、json
+# key 建议从环境变量读取：key = variables.get('encryptKey', '')
+params['product'] = aes_encrypt('明文值', '你的加密密钥')
+params['pageNo'] = aes_encrypt('1', '你的加密密钥')`
+    } else if (type === 'encrypt_whole') {
+      snippet = `# 整体加密：业务 JSON 加密为 s，设备信息加密为 o，并对 = & 做 URL 转义
+# 内置：aes_encrypt(text, key)、json
+# key 建议从环境变量读取：key = variables.get('encryptKey', '')
+import json as _j
+biz = {
+    "WorkDate": "2026-10-22",
+    "Site": "",
+    "Floor": "",
+    "Line": "",
+    "Shift": "",
+    "Func": "Equipment-GetMlbAttendOutputSchedule",
+}
+s = aes_encrypt(_j.dumps(biz, ensure_ascii=False), key).replace('=', '%3D').replace('&', '%26')
+o = aes_encrypt(_j.dumps({"Os": "", "DeviceId": "Utility", "AppVer": "0"}), key)
+params['s'] = s
+params['o'] = o`
+    }
+  } else if (field === 'post_request_script') {
+    snippet = `# 解密响应中的 r 字段，赋给 decrypted_body 后前端将明文展示
+# 内置：aes_decrypt(text, key)、json；可读 response_text / response_json
+# key 建议从环境变量读取：key = variables.get('encryptKey', '')
+import json as _j
+try:
+    obj = _j.loads(response_text)
+    if obj.get('r'):
+        decrypted_body = aes_decrypt(obj['r'], '你的加密密钥')
+except Exception as e:
+    decrypted_body = 'ERR: ' + str(e)`
+  }
+  if (!snippet) return
+  const current = selectedRequest.value[field] || ''
+  selectedRequest.value[field] = current ? current + '\n\n' + snippet : snippet
+  ElMessage.success(type === 'decrypt' ? '已插入响应解密示例' : '已插入AES加密示例')
 }
 
 const openVariableHelperForAssertion = (assertion, field, index) => {

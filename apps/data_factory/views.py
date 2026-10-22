@@ -382,6 +382,8 @@ class DataFactoryViewSet(viewsets.ModelViewSet):
             'hash_comparison': EncryptionTools.hash_comparison,
             'aes_encrypt': EncryptionTools.aes_encrypt,
             'aes_decrypt': EncryptionTools.aes_decrypt,
+            'aes_pkcs7_encrypt': EncryptionTools.aes_pkcs7_encrypt,
+            'aes_pkcs7_decrypt': EncryptionTools.aes_pkcs7_decrypt,
             'password_strength': EncryptionTools.password_strength,
             'generate_salt': EncryptionTools.generate_salt
         }
@@ -397,6 +399,10 @@ class DataFactoryViewSet(viewsets.ModelViewSet):
                 input_data = {'text': input_data, 'hash_value': ''}
             elif tool_name in ['aes_encrypt', 'aes_decrypt']:
                 input_data = {'text': input_data, 'password': 'default_password', 'mode': 'CBC'}
+            elif tool_name == 'aes_pkcs7_encrypt':
+                input_data = {'text': input_data, 'key': 'default_key'}
+            elif tool_name == 'aes_pkcs7_decrypt':
+                input_data = {'encrypted_text': input_data, 'key': 'default_key'}
             else:
                 input_data = {'text': input_data}
         return tool_mapping[tool_name](**input_data)
@@ -918,6 +924,8 @@ class DataFactoryViewSet(viewsets.ModelViewSet):
             'hash_comparison': '${hash_comparison(hash1, hash2)}',
             'aes_encrypt': '${aes_encrypt(text, password, mode)}',
             'aes_decrypt': '${aes_decrypt(encrypted_text, password, mode)}',
+            'aes_pkcs7_encrypt': '${aes_pkcs7_encrypt(text, key)}',
+            'aes_pkcs7_decrypt': '${aes_pkcs7_decrypt(encrypted_text, key)}',
             'jwt_decode': '${jwt_decode(token, verify, secret)}',
             'password_strength': '${password_strength(password)}',
             'generate_salt': '${generate_salt(length)}',
@@ -1011,6 +1019,8 @@ class DataFactoryViewSet(viewsets.ModelViewSet):
             'hash_comparison': '${hash_comparison(hash1, hash2)}',
             'aes_encrypt': '${aes_encrypt(hello, password, CBC)}',
             'aes_decrypt': '${aes_decrypt(encrypted, password, CBC)}',
+            'aes_pkcs7_encrypt': '${aes_pkcs7_encrypt(hello, yourKey)}',
+            'aes_pkcs7_decrypt': '${aes_pkcs7_decrypt(encrypted, yourKey)}',
             'jwt_decode': '${jwt_decode(token, false, secret)}',
             'password_strength': '${password_strength(myPassword123)}',
             'generate_salt': '${generate_salt(16)}',
@@ -1095,6 +1105,8 @@ class DataFactoryViewSet(viewsets.ModelViewSet):
             'hash_comparison': '加密',
             'aes_encrypt': '加密',
             'aes_decrypt': '加密',
+            'aes_pkcs7_encrypt': '加密',
+            'aes_pkcs7_decrypt': '加密',
             'jwt_decode': '加密',
             'password_strength': '加密',
             'generate_salt': '加密',
