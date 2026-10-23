@@ -296,6 +296,7 @@ import { Search, View, WarningFilled, Refresh } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import {
   getTestCaseExecutions,
+  getTestCaseExecution,
   getUiProjects,
   deleteTestCaseExecution,
   batchDeleteTestCaseExecutions,
@@ -605,11 +606,19 @@ const handleBatchDelete = () => {
   })
 }
 
-// 查看执行详情
-const viewExecutionDetail = (execution) => {
+// 查看执行详情（列表已精简，详情数据单独请求完整字段）
+const viewExecutionDetail = async (execution) => {
   currentExecution.value = execution
   activeTab.value = 'logs'
   showDetailDialog.value = true
+  try {
+    const res = await getTestCaseExecution(execution.id)
+    if (res.data) {
+      currentExecution.value = { ...execution, ...res.data }
+    }
+  } catch (e) {
+    // 详情拉取失败时保留列表行数据
+  }
 }
 
 // 显示重跑对话框

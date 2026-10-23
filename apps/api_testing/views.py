@@ -322,12 +322,18 @@ class ApiRequestViewSet(viewsets.ModelViewSet):
                 })
                 decrypted_body = _post_ctx.get('decrypted_body')
 
-            # 执行断言验证
+            # 执行断言验证（若响应被解密，则基于解密明文断言）
             assertions = request.data.get('assertions', api_request.assertions) or []
             for assertion in assertions:
                 if assertion.get('type') == 'response_time':
                     assertion['actual_time'] = response_time
-            assertions_results = execute_assertions(response, assertions)
+            _decrypted_json = None
+            if decrypted_body:
+                try:
+                    _decrypted_json = json.loads(decrypted_body)
+                except Exception:
+                    _decrypted_json = None
+            assertions_results = execute_assertions(response, assertions, text_override=decrypted_body, json_override=_decrypted_json)
             
             # 保存请求历史
             history = RequestHistory.objects.create(
@@ -903,7 +909,18 @@ class TestExecutionViewSet(viewsets.ReadOnlyModelViewSet):
     def generate_allure_report(self, request, pk=None):
         """生成Allure报告数据"""
         execution = self.get_object()
-        
+
+        # 报告输出目录：若报告已生成则直接复用，不再重新生成（查看方便）；?force=1 可强制重新生成
+        report_output_dir = os.path.join(settings.MEDIA_ROOT, 'api-testing', 'allure-reports', f'execution_{execution.id}')
+        summary_path = os.path.join(report_output_dir, 'summary.html')
+        force = request.query_params.get('force') == '1'
+        if not force and os.path.exists(summary_path):
+            return Response({
+                'success': True,
+                'message': '报告已存在，直接返回（如需重新生成请调用时加 ?force=1）',
+                'report_url': f'/media/api-testing/allure-reports/execution_{execution.id}/summary.html'
+            })
+
         try:
             # 创建报告目录
             results_dir = os.path.join(settings.MEDIA_ROOT, 'api-testing', 'allure-results', f'execution_{execution.id}')
@@ -912,8 +929,18 @@ class TestExecutionViewSet(viewsets.ReadOnlyModelViewSet):
             # 生成测试结果文件
             self._generate_test_result_files(execution, results_dir)
             
-            # 生成Allure报告
-            report_output_dir = os.path.join(settings.MEDIA_ROOT, 'api-testing', 'allure-reports', f'execution_{execution.id}')
+            # 把历史累积数据（prior runs）放入 results/history，使 Allure 报告含历史趋势
+            global_history = os.path.join(settings.MEDIA_ROOT, 'api-testing', 'allure-results', 'history')
+            results_history_dir = os.path.join(results_dir, 'history')
+            if os.path.isdir(global_history):
+                import shutil as _shutil
+                try:
+                    if os.path.exists(results_history_dir):
+                        _shutil.rmtree(results_history_dir, ignore_errors=True)
+                    _shutil.copytree(global_history, results_history_dir)
+                except Exception as e:
+                    logger.warning(f"复制历史数据到 results/history 失败: {e}")
+
             os.makedirs(report_output_dir, exist_ok=True)
             
             # 使用Allure命令行工具生成完整报告
@@ -1005,6 +1032,14 @@ class TestExecutionViewSet(viewsets.ReadOnlyModelViewSet):
                                 timeout=30
                             )
                             logger.info(f"Allure 报告生成成功: {result.stdout}")
+                            # 生成成功后，把本次报告的历史数据回写到全局累积目录，供下次生成历史趋势使用
+                            try:
+                                import shutil as _shutil2
+                                _shutil2.rmtree(global_history, ignore_errors=True)
+                                _shutil2.copytree(os.path.join(report_output_dir, 'history'), global_history)
+                                logger.info(f"历史趋势数据已累积: {global_history}")
+                            except Exception as _he:
+                                logger.warning(f"历史趋势数据回写失败: {_he}")
                             break
                         except subprocess.TimeoutExpired:
                             if _ == 2:  # 最后一次尝试
@@ -1368,7 +1403,7 @@ class TestExecutionViewSet(viewsets.ReadOnlyModelViewSet):
             return False
     
     def _generate_test_result_files(self, execution, report_dir):
-        """生成测试结果文件"""
+        """生成测试结果文件（Allure result.json + 附件）"""
         try:
             # 检查execution.results是否存在
             if not execution.results:
@@ -1391,73 +1426,200 @@ class TestExecutionViewSet(viewsets.ReadOnlyModelViewSet):
             with open(container_file_path, 'w', encoding='utf-8') as f:
                 json.dump(container_data, f, ensure_ascii=False, indent=2)
 
-            # 只生成每个测试请求的结果文件，不生成测试套件的结果文件
+            # 为每个测试请求生成结果文件 + 附件文件
             for i, result in enumerate(execution.results):
-                request_result = {
-                    "uuid": f"{execution.id}-{i}",
-                    "name": result.get('name', f'测试请求 {i+1}'),
-                    "status": "passed" if result.get('passed', False) else "failed",
+                request_uuid = f"{execution.id}-{i}"
+                name = result.get('name', f'测试请求 {i+1}')
+                method = result.get('method', 'GET')
+                url = result.get('url', '')
+                status_code = result.get('status_code', '-')
+                response_time = result.get('response_time', '-')
+                passed = bool(result.get('passed', False))
+                status = "passed" if passed else "failed"
+                error = result.get('error') or ''
+
+                # 使用真实执行时间（毫秒），缺失时回退为模拟
+                start_ms = result.get('start_time')
+                stop_ms = result.get('stop_time')
+                if not start_ms or not stop_ms:
+                    now_ms = int(time.time() * 1000)
+                    start_ms = now_ms - 1000
+                    stop_ms = now_ms
+
+                request_data = result.get('request_data') or {}
+                response_data = result.get('response_data') or {}
+
+                # 组装步骤（含附件引用）
+                steps = []
+
+                # 步骤1：发送请求
+                steps.append({
+                    "name": f"发送请求 {method} {url}",
+                    "status": "passed",
                     "stage": "finished",
-                    "start": int(time.time() * 1000) - 1000,  # 模拟开始时间
-                    "stop": int(time.time() * 1000),  # 模拟结束时间
-                    "description": f"Method: {result.get('method', 'GET')}\nURL: {result.get('url', '')}",
+                    "start": start_ms - 1000,
+                    "stop": start_ms,
+                    "steps": [],
+                    "attachments": [
+                        {"name": "请求详情", "source": f"{request_uuid}-request.txt", "type": "text/plain"}
+                    ]
+                })
+
+                # 步骤2：响应
+                steps.append({
+                    "name": f"响应 状态码 {status_code}，耗时 {response_time} ms",
+                    "status": status,
+                    "stage": "finished",
+                    "start": start_ms,
+                    "stop": stop_ms,
+                    "steps": [],
+                    "attachments": [
+                        {"name": "响应体", "source": f"{request_uuid}-response.txt", "type": "text/plain"},
+                        {"name": "响应头", "source": f"{request_uuid}-response-headers.txt", "type": "text/plain"}
+                    ]
+                })
+
+                # 步骤3+：每个断言一条结构化步骤
+                assertions_results = result.get('assertions_results') or []
+                if assertions_results:
+                    for a in assertions_results:
+                        a_name = a.get('name', '未命名断言')
+                        a_passed = bool(a.get('passed', False))
+                        step_entry = {
+                            "name": f"断言: {a_name}",
+                            "status": "passed" if a_passed else "failed",
+                            "stage": "finished",
+                            "start": stop_ms,
+                            "stop": stop_ms,
+                            "steps": []
+                        }
+                        if not a_passed and a.get('error'):
+                            step_entry["statusDetails"] = {"message": str(a.get('error'))[:5000], "trace": ""}
+                        steps.append(step_entry)
+
+                request_result = {
+                    "uuid": request_uuid,
+                    "name": name,
+                    "status": status,
+                    "stage": "finished",
+                    "start": start_ms,
+                    "stop": stop_ms,
+                    "description": f"Method: {method}\nURL: {url}\n状态码: {status_code}\n耗时: {response_time} ms",
                     "historyId": f"{execution.test_suite.id}-{i}",
-                    "fullName": f"{execution.test_suite.name} / {result.get('name', f'请求 {i+1}')}",
+                    "fullName": f"{execution.test_suite.name} / {name}",
                     "links": [],
                     "labels": [
                         {"name": "suite", "value": execution.test_suite.name},
                         {"name": "testClass", "value": execution.test_suite.name},
                         {"name": "package", "value": "api_testing"},
-                        {"name": "project", "value": execution.test_suite.project.name}
+                        {"name": "project", "value": getattr(execution.test_suite.project, 'name', '')},
+                        {"name": "feature", "value": name},
+                        {"name": "severity", "value": "normal"},
                     ],
                     "parameters": [
-                        {"name": "method", "value": result.get('method', 'GET')},
-                        {"name": "url", "value": result.get('url', '')}
+                        {"name": "method", "value": method},
+                        {"name": "url", "value": url},
+                        {"name": "status_code", "value": str(status_code)},
+                        {"name": "response_time_ms", "value": str(response_time)}
                     ],
-                    "steps": [
-                        {
-                            "name": "请求 {0} {1}".format(result.get('method', 'GET'), result.get('url', '')),
-                            "status": "passed",
-                            "stage": "finished",
-                            "start": int(time.time() * 1000) - 2500,
-                            "stop": int(time.time() * 1000) - 1500,
-                            "steps": []
-                        },
-                        {
-                            "name": "响应 状态码 {0}，耗时 {1}ms".format(result.get('status_code', '-'), result.get('response_time', '-')),
-                            "status": "passed" if result.get('passed', False) else "failed",
-                            "stage": "finished",
-                            "start": int(time.time() * 1000) - 1500,
-                            "stop": int(time.time() * 1000) - 800,
-                            "steps": []
-                        },
-                        {
-                            "name": "断言结果: {0}".format(json.dumps(result.get('assertions_results', []), ensure_ascii=False)[:600] if result.get('assertions_results') else '无断言'),
-                            "status": "passed" if result.get('passed', False) else "failed",
-                            "stage": "finished",
-                            "start": int(time.time() * 1000) - 800,
-                            "stop": int(time.time() * 1000),
-                            "steps": []
-                        }
-                    ]
+                    "steps": steps
                 }
-                
+
                 # 添加错误信息（如果有的话）
-                if result.get('error'):
+                if error:
                     request_result["statusDetails"] = {
-                        "message": result.get('error'),
+                        "message": str(error)[:5000],
                         "trace": ""
                     }
-                
+
                 # 保存请求结果
-                request_file_path = os.path.join(report_dir, f'{execution.id}-{i}-result.json')
+                request_file_path = os.path.join(report_dir, f'{request_uuid}-result.json')
                 with open(request_file_path, 'w', encoding='utf-8') as f:
                     json.dump(request_result, f, ensure_ascii=False, indent=2)
+
+                # 生成附件文件（请求详情 / 响应体 / 响应头）
+                self._write_allure_attachment(report_dir, f'{request_uuid}-request.txt', self._format_request_text(request_data, method, url))
+                self._write_allure_attachment(report_dir, f'{request_uuid}-response.txt', self._format_response_body(response_data))
+                self._write_allure_attachment(report_dir, f'{request_uuid}-response-headers.txt', self._format_headers(response_data.get('headers')))
 
         except Exception as e:
             import traceback
             logger.error(f"生成测试结果文件失败: {str(e)}\n{traceback.format_exc()}")
             raise
+
+    @staticmethod
+    def _write_allure_attachment(report_dir, filename, content):
+        """写入 Allure 附件文件（自动 UTF-8）"""
+        path = os.path.join(report_dir, filename)
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(content if isinstance(content, str) else str(content))
+
+    @staticmethod
+    def _format_request_text(request_data, method, url):
+        """格式化请求详情文本"""
+        lines = []
+        lines.append(f"Method: {method}")
+        lines.append(f"URL: {url}")
+        lines.append("")
+        headers = request_data.get('headers') or {}
+        lines.append("== 请求头 ==")
+        if isinstance(headers, dict):
+            for k, v in headers.items():
+                lines.append(f"{k}: {v}")
+        else:
+            lines.append(str(headers))
+        lines.append("")
+        params = request_data.get('params') or {}
+        lines.append("== 请求参数 ==")
+        lines.append(str(params))
+        lines.append("")
+        body = request_data.get('body')
+        lines.append("== 请求体 ==")
+        if body is None:
+            lines.append("(无)")
+        elif isinstance(body, str):
+            lines.append(body)
+        else:
+            try:
+                lines.append(json.dumps(body, ensure_ascii=False, indent=2))
+            except Exception:
+                lines.append(str(body))
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_response_body(response_data):
+        """格式化响应体文本"""
+        body = response_data.get('body')
+        if body is None:
+            resp_json = response_data.get('json')
+            if resp_json is not None:
+                try:
+                    return json.dumps(resp_json, ensure_ascii=False, indent=2)
+                except Exception:
+                    return str(resp_json)
+            return "(无响应体)"
+        if isinstance(body, str):
+            # 尝试美化 JSON
+            try:
+                return json.dumps(json.loads(body), ensure_ascii=False, indent=2)
+            except Exception:
+                return body
+        try:
+            return json.dumps(body, ensure_ascii=False, indent=2)
+        except Exception:
+            return str(body)
+
+    @staticmethod
+    def _format_headers(headers):
+        """格式化响应头文本"""
+        if not headers:
+            return "(无响应头)"
+        lines = []
+        if isinstance(headers, dict):
+            for k, v in headers.items():
+                lines.append(f"{k}: {v}")
+            return "\n".join(lines)
+        return str(headers)
 
 
 class UserViewSet(viewsets.ReadOnlyModelViewSet):

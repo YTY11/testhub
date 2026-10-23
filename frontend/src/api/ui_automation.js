@@ -719,6 +719,14 @@ export function getTestCaseExecutions(params) {
   })
 }
 
+// 获取单条测试用例执行记录详情（含 execution_logs / screenshots）
+export function getTestCaseExecution(id) {
+  return request({
+    url: `/ui-automation/test-case-executions/${id}/`,
+    method: 'get'
+  })
+}
+
 // 删除测试用例执行记录
 export function deleteTestCaseExecution(id) {
   return request({

@@ -33,6 +33,7 @@ from .serializers import (
     TestSuiteSerializer, TestSuiteCreateSerializer, TestSuiteUpdateSerializer, TestSuiteWithScriptsSerializer,
     TestSuiteScriptSerializer, TestSuiteTestCaseSerializer,
     TestExecutionSerializer, TestExecutionCreateSerializer, TestExecutionListSerializer,
+    TestCaseExecutionListSerializer,
     ScreenshotSerializer,
     ElementGroupSerializer, ElementGroupCreateSerializer,
     PageObjectSerializer, PageObjectCreateSerializer, PageObjectElementSerializer,
@@ -2083,6 +2084,12 @@ class TestCaseExecutionViewSet(viewsets.ModelViewSet):
     ordering = ['-created_at']
     filterset_fields = ['project', 'test_suite', 'test_case', 'status', 'execution_source']
     pagination_class = StandardPagination
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            # 列表用精简序列化器，避免每行序列化 execution_logs / screenshots 大 JSON 字段
+            return TestCaseExecutionListSerializer
+        return TestCaseExecutionSerializer
 
     def get_queryset(self):
         # 只显示用户有权限访问的项目的执行记录

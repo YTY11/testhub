@@ -616,6 +616,29 @@ class TestCaseExecutionSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
 
+class TestCaseExecutionListSerializer(serializers.ModelSerializer):
+    """测试用例执行记录列表精简序列化器（不含 execution_logs / screenshots 大 JSON 字段，用于列表提速）"""
+    test_case_name = serializers.CharField(source='test_case.name', read_only=True)
+    project_name = serializers.CharField(source='project.name', read_only=True)
+    test_suite_name = serializers.SerializerMethodField()
+    created_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TestCaseExecution
+        fields = [
+            'id', 'test_case', 'test_case_name', 'project', 'project_name',
+            'test_suite', 'test_suite_name', 'execution_source', 'status',
+            'engine', 'browser', 'headless', 'error_message', 'execution_time',
+            'started_at', 'finished_at', 'created_by', 'created_by_name', 'created_at'
+        ]
+
+    def get_test_suite_name(self, obj):
+        return obj.test_suite.name if obj.test_suite else None
+
+    def get_created_by_name(self, obj):
+        return obj.created_by.username if obj.created_by else '-'
+
+
 class TestCaseRunSerializer(serializers.Serializer):
     """测试用例运行序列化器"""
     test_case_id = serializers.IntegerField()

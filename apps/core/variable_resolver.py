@@ -123,19 +123,22 @@ class VariableResolver:
     
     def resolve(self, text):
         """解析文本中的动态函数占位符
-        
+
         Args:
             text: 包含动态函数的文本，如 "Hello ${random_string(8)}"
-            
+
         Returns:
             解析后的文本
+
+        支持嵌套：${funcA(${funcB(...)}, ...)} 会先解析最内层，再用其结果解析外层，
+        例如 ${aes_pkcs7_encrypt(${date_offset(-7, 0, 0, %Y-%m-%d)}, key)} 可正常工作。
         """
         if not isinstance(text, str):
             return text
         
-        # 匹配 ${function_name(args)} 模式
-        pattern = r'\$\{([^}]+)\}'
-        
+        # 匹配最内层（不含嵌套花括号）的 ${function(args)} 模式
+        pattern = r'\$\{([^{}]*)\}'
+
         def replace_func(match):
             expression = match.group(1)
             try:
@@ -148,8 +151,16 @@ class VariableResolver:
                 except UnicodeEncodeError:
                     print(f"[WARNING] Variable resolution failed: ${{{expression}}}")
                 return match.group(0)
-        
-        return re.sub(pattern, replace_func, text)
+
+        # 迭代解析：每轮替换最内层，直到文本不再变化（内层先解析成字面值，外层再解析）
+        prev = None
+        current = text
+        guard = 0
+        while prev != current and guard < 50:
+            prev = current
+            current = re.sub(pattern, replace_func, current)
+            guard += 1
+        return current
     
     def _evaluate_expression(self, expression):
         """评估单个表达式

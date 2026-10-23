@@ -28,6 +28,7 @@ def run_pre_request_script(script, context):
 
     上下文可读写：params(dict)、headers(dict)、body(dict|str)、url(str)、variables(dict)，
     并内置 json、urllib.parse、aes_encrypt、aes_decrypt。脚本可直接修改这些变量实现参数加密。
+    脚本内的变量表达式（${...}，如 ${date_offset(-7)}、${datetime()}）在执行前会被解析为字面值。
     """
     if not script or not script.strip():
         return context
@@ -36,6 +37,11 @@ def run_pre_request_script(script, context):
     from urllib import parse as _urlparse
     ctx['urllib'] = _urlparse
     ctx.update(_build_script_helpers())
+    # 先解析脚本中的变量表达式 ${...}，使脚本可直接使用变量助手插入的占位符
+    try:
+        script = VariableResolver().resolve(script)
+    except Exception as e:
+        logger.error(f"[请求前脚本] 变量解析失败: {e}")
     try:
         exec(compile(script, '<pre_request_script>', 'exec'), {'__builtins__': __builtins__}, ctx)
     except Exception as e:
@@ -49,12 +55,17 @@ def run_post_request_script(script, context):
 
     上下文可读：response_text(str)、response_json(dict|None)、status_code(int)、variables(dict)；
     内置 json、aes_encrypt、aes_decrypt。脚本可把解密结果赋给 decrypted_body，前端将优先展示它。
+    脚本内的变量表达式（${...}）在执行前会被解析为字面值。
     """
     if not script or not script.strip():
         return context
     ctx = dict(context)
     ctx['json'] = json
     ctx.update(_build_script_helpers())
+    try:
+        script = VariableResolver().resolve(script)
+    except Exception as e:
+        logger.error(f"[请求后脚本] 变量解析失败: {e}")
     try:
         exec(compile(script, '<post_request_script>', 'exec'), {'__builtins__': __builtins__}, ctx)
     except Exception as e:
@@ -63,8 +74,12 @@ def run_post_request_script(script, context):
     return ctx
 
 
-def execute_assertions(response, assertions):
-    """执行断言验证"""
+def execute_assertions(response, assertions, text_override=None, json_override=None):
+    """执行断言验证
+
+    text_override / json_override：当响应被请求后脚本解密为明文时传入，
+    使断言基于解密后的明文进行（如 contains / json_path / equals）。
+    """
     results = []
     
     for assertion in assertions:
@@ -93,7 +108,7 @@ def execute_assertions(response, assertions):
                 passed = actual <= expected if actual else False
                 
             elif assertion_type == 'contains':
-                text = response.text or ''
+                text = text_override if text_override is not None else (response.text or '')
                 pattern = str(expected)
                 actual = text[:200] + '...' if len(text) > 200 else text
                 passed = pattern in str(text)
@@ -105,12 +120,14 @@ def execute_assertions(response, assertions):
                 passed = False
                 
                 try:
-                    # 检查响应是否为JSON格式
-                    content_type = response.headers.get('content-type', '').lower()
-                    if 'application/json' not in content_type:
-                        raise ValueError(f"响应不是JSON格式，Content-Type: {content_type}")
-                    
-                    response_json = json.loads(response.text)
+                    # 优先使用解密后的 JSON；否则解析原始响应
+                    if json_override is not None:
+                        response_json = json_override
+                    else:
+                        content_type = response.headers.get('content-type', '').lower()
+                        if 'application/json' not in content_type:
+                            raise ValueError(f"响应不是JSON格式，Content-Type: {content_type}")
+                        response_json = json.loads(response.text)
                     
                     # 检查JSONPath表达式是否为空
                     if not json_path:
@@ -146,7 +163,7 @@ def execute_assertions(response, assertions):
                 passed = actual == expected_value
                 
             elif assertion_type == 'equals':
-                actual = response.text.strip()
+                actual = (text_override if text_override is not None else response.text).strip()
                 passed = actual == str(expected).strip()
             
             # 确保在所有情况下都设置actual值
@@ -289,7 +306,22 @@ def execute_test_suite(test_suite, environment, executed_by):
                     'response_time': response_time,
                     'passed': passed,
                     'error': error_message,
-                    'assertions_results': assertions_results
+                    'assertions_results': assertions_results,
+                    # 真实执行数据，供 Allure 报告展示完整请求/响应
+                    'start_time': int(start_time * 1000),
+                    'stop_time': int(end_time * 1000),
+                    'request_data': {
+                        'url': url,
+                        'method': api_request.method,
+                        'headers': headers,
+                        'params': params,
+                        'body': body_data,
+                    },
+                    'response_data': {
+                        'headers': dict(response.headers),
+                        'body': response.text,
+                        'json': response.json() if response.headers.get('content-type', '').startswith('application/json') else None,
+                    },
                 })
                 
                 # 保存请求历史
@@ -443,7 +475,13 @@ def execute_api_request(api_request, environment, executed_by):
             if assertion.get('type') == 'response_time':
                 assertion['actual_time'] = response_time
         
-        assertions_results = execute_assertions(response, assertions)
+        _decrypted_json = None
+        if decrypted_body:
+            try:
+                _decrypted_json = json.loads(decrypted_body)
+            except Exception:
+                _decrypted_json = None
+        assertions_results = execute_assertions(response, assertions, text_override=decrypted_body, json_override=_decrypted_json)
         
         # 保存请求历史
         history = RequestHistory.objects.create(

@@ -716,6 +716,9 @@
                     <div class="response-body">
                       <div class="response-actions">
                         <el-button-group>
+                          <el-button v-if="response.response_data?.decrypted" size="small" @click="showDecrypted = !showDecrypted">
+                            {{ showDecrypted ? '查看密文' : '查看解密' }}
+                          </el-button>
                           <el-button size="small" @click="formatResponse">{{ $t('apiTesting.interface.format') }}</el-button>
                           <el-button size="small" @click="copyResponse">{{ $t('apiTesting.interface.copy') }}</el-button>
                           <el-button size="small" @click="toggleJsonPathExtractor">
@@ -1707,12 +1710,13 @@ const hasBody = computed(() => {
   return selectedRequest.value && selectedRequest.value.method && ['POST', 'PUT', 'PATCH'].includes(selectedRequest.value.method)
 })
 
+const showDecrypted = ref(true) // 响应体默认展示解密明文，可切换查看原始密文
 const responseBody = computed(() => {
   if (!response.value || !response.value.response_data) return ''
 
-  // 请求后脚本解密结果优先展示（明文）
+  // 请求后脚本解密结果（明文），默认优先展示；可通过"查看密文"切换回原始
   const decrypted = response.value.response_data.decrypted
-  if (decrypted !== null && decrypted !== undefined && decrypted !== '') {
+  if (showDecrypted.value && decrypted !== null && decrypted !== undefined && decrypted !== '') {
     try {
       return JSON.stringify(JSON.parse(decrypted), null, 2)
     } catch (e) {
