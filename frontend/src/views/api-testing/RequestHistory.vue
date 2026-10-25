@@ -95,29 +95,29 @@
           <el-tab-pane :label="$t('apiTesting.history.requestInfo')" name="request">
             <div class="detail-section">
               <h4>{{ $t('apiTesting.history.requestUrl') }}</h4>
-              <el-input v-model="selectedHistory.request_data.url" readonly />
+              <el-input v-model="requestDataPlain.url" readonly />
 
               <h4>{{ $t('apiTesting.history.requestHeaders') }}</h4>
-              <el-table :data="formatHeaders(selectedHistory.request_data.headers)" style="width: 100%">
+              <el-table :data="formatHeaders(requestDataPlain.headers)" style="width: 100%">
                 <el-table-column prop="key" label="Key" width="200" />
                 <el-table-column prop="value" label="Value" />
               </el-table>
 
-              <h4 v-if="selectedHistory.request_data.params && Object.keys(selectedHistory.request_data.params).length > 0">
+              <h4 v-if="requestDataPlain.params && Object.keys(requestDataPlain.params).length > 0">
                 {{ $t('apiTesting.history.requestParams') }}
               </h4>
               <el-table
-                v-if="selectedHistory.request_data.params && Object.keys(selectedHistory.request_data.params).length > 0"
-                :data="formatHeaders(selectedHistory.request_data.params)"
+                v-if="requestDataPlain.params && Object.keys(requestDataPlain.params).length > 0"
+                :data="formatHeaders(requestDataPlain.params)"
                 style="width: 100%"
               >
                 <el-table-column prop="key" label="Key" width="200" />
                 <el-table-column prop="value" label="Value" />
               </el-table>
 
-              <h4 v-if="selectedHistory.request_data.body">{{ $t('apiTesting.history.requestBody') }}</h4>
-              <pre v-if="selectedHistory.request_data.body" class="json-content">
-                {{ JSON.stringify(selectedHistory.request_data.body, null, 2) }}
+              <h4 v-if="requestDataPlain.body">{{ $t('apiTesting.history.requestBody') }}</h4>
+              <pre v-if="requestDataPlain.body" class="json-content">
+                {{ JSON.stringify(requestDataPlain.body, null, 2) }}
               </pre>
             </div>
           </el-tab-pane>
@@ -192,17 +192,48 @@ const currentHistory = computed(() => {
   return activeTab.value === 'HTTP' ? httpHistory.value : websocketHistory.value
 })
 
+// 请求信息优先展示解密后的明文（执行时保存的 request_data.decrypted）
+const requestDataPlain = computed(() => {
+  const rd = selectedHistory.value?.request_data
+  if (!rd) return rd
+  if (rd.decrypted && typeof rd.decrypted === 'object') {
+    return rd.decrypted
+  }
+  return rd
+})
+
 const responseBodyText = computed(() => {
-  if (!selectedHistory.value?.response_data) return ''
-  
+  const rsp = selectedHistory.value?.response_data
+  if (!rsp) return ''
+
+  // 优先展示解密明文
+  if (rsp.decrypted !== undefined && rsp.decrypted !== null && rsp.decrypted !== '') {
+    const d = rsp.decrypted
+    if (typeof d === 'string') {
+      try {
+        return JSON.stringify(JSON.parse(d), null, 2)
+      } catch (e) {
+        return d
+      }
+    }
+    if (typeof d === 'object') {
+      try {
+        return JSON.stringify(d, null, 2)
+      } catch (e) {
+        return String(d)
+      }
+    }
+    return String(d)
+  }
+
   try {
-    if (selectedHistory.value.response_data.json) {
-      return JSON.stringify(selectedHistory.value.response_data.json, null, 2)
+    if (rsp.json) {
+      return JSON.stringify(rsp.json, null, 2)
     } else {
-      return selectedHistory.value.response_data.body || ''
+      return rsp.body || ''
     }
   } catch (e) {
-    return selectedHistory.value.response_data.body || ''
+    return rsp.body || ''
   }
 })
 

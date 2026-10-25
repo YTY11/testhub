@@ -245,6 +245,9 @@ export default {
     // Assertions
     assertions: 'Assertions',
     addAssertion: 'Add Assertion',
+    assertionType: 'Assertion Type',
+    assertionValue: 'Expected Value / Path',
+    assertionValuePlaceholder: 'Enter expected value or JSON path',
     assertionName: 'Assertion Name',
     selectAssertionType: 'Select Assertion Type',
     assertionTypes: {
@@ -310,6 +313,7 @@ export default {
     assertions: 'Assertions',
     editAssertion: 'Edit Assertion',
     editAssertions: 'Edit Assertions',
+    newAssertion: 'New Assertion',
     remove: 'Remove',
     executionHistory: 'Execution History',
     totalRequests: 'Total Requests',

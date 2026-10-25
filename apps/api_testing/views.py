@@ -263,6 +263,15 @@ class ApiRequestViewSet(viewsets.ModelViewSet):
                 else:
                     body_data = body_content
 
+            # 记录加密前明文（供历史展示明文）
+            request_plain = {
+                'url': url,
+                'method': request_method,
+                'headers': dict(headers),
+                'params': dict(params),
+                'body': body_data,
+            }
+
             # 执行请求前脚本（可修改 params/headers/body_data 实现参数加密）
             from .utils import run_pre_request_script
             if api_request.pre_request_script and api_request.pre_request_script.strip():
@@ -281,8 +290,16 @@ class ApiRequestViewSet(viewsets.ModelViewSet):
             # 执行请求
             start_time = time.time()
 
-            # 根据请求体类型决定使用 data 还是 json 参数
-            if body_type == 'raw':
+            from .utils import execute_websocket, SimpleResponse
+            is_ws = str(url).startswith(('ws://', 'wss://'))
+            if is_ws:
+                ws_ok, ws_code, ws_text, ws_json, ws_err = execute_websocket(
+                    url, body_data, headers, timeout=30
+                )
+                if not ws_ok:
+                    raise Exception(ws_err or 'WebSocket 请求失败')
+                response = SimpleResponse(ws_code, ws_text, {}, ws_json)
+            elif body_type == 'raw':
                 # raw 类型使用 data 参数，发送原始字符串
                 response = requests.request(
                     method=request_method,
@@ -344,7 +361,8 @@ class ApiRequestViewSet(viewsets.ModelViewSet):
                     'method': request_method,
                     'headers': headers,
                     'params': params,
-                    'body': body_data
+                    'body': body_data,
+                    'decrypted': request_plain,
                 },
                 response_data={
                     'headers': dict(response.headers),
@@ -542,7 +560,9 @@ class RequestHistoryViewSet(viewsets.ModelViewSet):
     def clear_all(self, request):
         """清空请求历史（当前用户有权限的记录）"""
         queryset = self.get_queryset()
-        deleted_count, _ = queryset.delete()
+        # 先取有权限的 ID 列表，避免在 distinct() 之后调用 delete()（会抛 TypeError）
+        valid_ids = list(queryset.values_list('id', flat=True))
+        deleted_count, _ = RequestHistory.objects.filter(id__in=valid_ids).delete()
         return Response({'message': f'成功清空 {deleted_count} 条历史记录'})
 
 
@@ -590,17 +610,23 @@ class TestSuiteViewSet(viewsets.ModelViewSet):
             
             # 创建变量解析器
             resolver = VariableResolver()
+            from .utils import (
+                run_pre_request_script,
+                run_post_request_script,
+                execute_websocket,
+                SimpleResponse,
+            )
 
             # 执行每个请求
             for suite_request in suite_requests:
                 api_request = suite_request.request
-                
+
                 try:
                     # 解析环境变量
                     variables = {}
                     if test_suite.environment:
                         variables.update(test_suite.environment.variables)
-                    
+
                     # 替换URL中的变量（先解析动态函数，再替换环境变量）
                     url = self._replace_variables(api_request.url, variables)
                     url = resolver.resolve(url)
@@ -629,39 +655,115 @@ class TestSuiteViewSet(viewsets.ModelViewSet):
                         params[key] = resolver.resolve(params[key])
 
                     body_data = None
-                    if api_request.body and api_request.method in ['POST', 'PUT', 'PATCH']:
-                        if api_request.body.get('type') == 'json':
-                            body_data = api_request.body.get('data', {})
-                            body_data = self._replace_variables_in_dict(body_data, variables)
-                            body_data = self._resolve_variables_in_dict(body_data, resolver)
+                    body_type = 'none'
+                    if api_request.body:
+                        body_type = api_request.body.get('type', 'none')
+                        body_content = api_request.body.get('data')
+                        if body_type == 'json':
+                            if isinstance(body_content, dict):
+                                body_data = self._replace_variables_in_dict(body_content, variables)
+                                body_data = self._resolve_variables_in_dict(body_data, resolver)
+                            else:
+                                body_data = body_content
+                        elif body_type == 'raw' and isinstance(body_content, str):
+                            body_data = self._replace_variables(body_content, variables)
+                            body_data = resolver.resolve(body_data)
+                        else:
+                            body_data = body_content
+
+                    # 记录加密前明文（供历史/报告展示）
+                    request_plain = {
+                        'url': url,
+                        'method': api_request.method,
+                        'headers': dict(headers),
+                        'params': dict(params),
+                        'body': body_data,
+                    }
+
+                    # 请求前脚本（可修改 params/headers/body_data/url 实现参数加密）
+                    if api_request.pre_request_script and api_request.pre_request_script.strip():
+                        _pre_ctx = run_pre_request_script(api_request.pre_request_script, {
+                            'params': params,
+                            'headers': headers,
+                            'body': body_data,
+                            'url': url,
+                            'variables': variables,
+                        })
+                        params = _pre_ctx.get('params', params)
+                        headers = _pre_ctx.get('headers', headers)
+                        body_data = _pre_ctx.get('body', body_data)
+                        url = _pre_ctx.get('url', url)
+
+                    is_ws = str(url).startswith(('ws://', 'wss://'))
 
                     # 执行请求
                     start_time = time.time()
-                    response = requests.request(
-                        method=api_request.method,
-                        url=url,
-                        headers=headers,
-                        params=params,
-                        json=body_data,
-                        timeout=30
-                    )
+                    if is_ws:
+                        ws_ok, ws_code, ws_text, ws_json, ws_err = execute_websocket(
+                            url, body_data, headers, timeout=30
+                        )
+                        if not ws_ok:
+                            raise Exception(ws_err or 'WebSocket 请求失败')
+                        response = SimpleResponse(ws_code, ws_text, {}, ws_json)
+                    else:
+                        if body_type == 'raw':
+                            response = requests.request(
+                                method=api_request.method,
+                                url=url,
+                                headers=headers,
+                                params=params,
+                                data=body_data,
+                                timeout=30
+                            )
+                        else:
+                            response = requests.request(
+                                method=api_request.method,
+                                url=url,
+                                headers=headers,
+                                params=params,
+                                json=body_data,
+                                timeout=30
+                            )
                     end_time = time.time()
                     response_time = (end_time - start_time) * 1000
-                    
-                    # 执行断言验证
+                    stop_time_ms = int(end_time * 1000)
+
+                    # 请求后脚本（解密响应，把解密结果赋给 decrypted_body）
+                    decrypted_body = None
+                    if api_request.post_request_script and api_request.post_request_script.strip():
+                        _resp_json = None
+                        try:
+                            _resp_json = response.json()
+                        except Exception:
+                            _resp_json = None
+                        _post_ctx = run_post_request_script(api_request.post_request_script, {
+                            'response_text': response.text,
+                            'response_json': _resp_json,
+                            'status_code': response.status_code,
+                            'variables': variables,
+                        })
+                        decrypted_body = _post_ctx.get('decrypted_body')
+
+                    # 明文断言（解密后基于明文比对）
                     assertions = api_request.assertions or []
-                    # 添加响应时间到断言中
                     for assertion in assertions:
                         if assertion.get('type') == 'response_time':
                             assertion['actual_time'] = response_time
-                    
-                    # 使用共享的断言执行方法
-                    assertions_results = execute_assertions(response, assertions)
-                    
+                    _decrypted_json = None
+                    if decrypted_body:
+                        try:
+                            _decrypted_json = json.loads(decrypted_body)
+                        except Exception:
+                            _decrypted_json = None
+                    assertions_results = execute_assertions(
+                        response, assertions,
+                        text_override=decrypted_body, json_override=_decrypted_json
+                    )
+
                     # 检查所有断言是否通过
                     passed = True
                     error_message = ''
-                    
+
                     # 检查套件请求的断言
                     for assertion in suite_request.assertions:
                         # 简单的状态码断言
@@ -671,20 +773,27 @@ class TestSuiteViewSet(viewsets.ModelViewSet):
                                 passed = False
                                 error_message = f'状态码断言失败: 期望 {expected}, 实际 {response.status_code}'
                                 break
-                    
+
                     # 检查接口自身的断言
                     if passed and assertions_results:
                         for assertion_result in assertions_results:
                             if not assertion_result.get('passed', True):
                                 passed = False
-                                error_message = f"断言失败: {assertion_result.get('name', '未命名断言')} - {assertion_result.get('error', '断言不通过')}"
+                                error_message = f"断言失败: {assertion_result.get('name', '未命名断言')} | 期望: {assertion_result.get('expected')} | 实际: {assertion_result.get('actual')} {('- ' + str(assertion_result.get('error')) if assertion_result.get('error') else '')}"
                                 break
-                    
+
                     if passed:
                         passed_count += 1
                     else:
                         failed_count += 1
-                    
+
+                    response_body = response.text
+                    response_json = None
+                    try:
+                        response_json = response.json()
+                    except Exception:
+                        response_json = None
+
                     results.append({
                         'name': api_request.name,
                         'method': api_request.method,
@@ -693,9 +802,26 @@ class TestSuiteViewSet(viewsets.ModelViewSet):
                         'response_time': response_time,
                         'passed': passed,
                         'error': error_message,
-                        'assertions_results': assertions_results
+                        'assertions_results': assertions_results,
+                        'start_time': int(start_time * 1000),
+                        'stop_time': stop_time_ms,
+                        'request_type': 'WEBSOCKET' if is_ws else 'HTTP',
+                        'request_data': {
+                            'url': url,
+                            'method': api_request.method,
+                            'headers': headers,
+                            'params': params,
+                            'body': body_data,
+                            'decrypted': request_plain,
+                        },
+                        'response_data': {
+                            'headers': dict(response.headers),
+                            'body': response_body,
+                            'json': response_json,
+                            'decrypted': decrypted_body,
+                        },
                     })
-                    
+
                     # 保存请求历史
                     RequestHistory.objects.create(
                         request=api_request,
@@ -705,19 +831,21 @@ class TestSuiteViewSet(viewsets.ModelViewSet):
                             'method': api_request.method,
                             'headers': headers,
                             'params': params,
-                            'body': body_data
+                            'body': body_data,
+                            'decrypted': request_plain,
                         },
                         response_data={
                             'headers': dict(response.headers),
-                            'body': response.text,
-                            'json': response.json() if response.headers.get('content-type', '').startswith('application/json') else None
+                            'body': response_body,
+                            'json': response_json,
+                            'decrypted': decrypted_body,
                         },
                         status_code=response.status_code,
                         response_time=response_time,
                         assertions_results=assertions_results,
                         executed_by=request.user
                     )
-                    
+
                 except Exception as e:
                     failed_count += 1
                     results.append({
@@ -725,7 +853,8 @@ class TestSuiteViewSet(viewsets.ModelViewSet):
                         'method': api_request.method,
                         'url': api_request.url,
                         'passed': False,
-                        'error': str(e)
+                        'error': str(e),
+                        'request_type': getattr(api_request, 'request_type', 'HTTP'),
                     })
             
             # 更新执行结果
@@ -1281,7 +1410,8 @@ class TestExecutionViewSet(viewsets.ReadOnlyModelViewSet):
         a:hover {{
             text-decoration: underline;
         }}
-    </style>
+    .test-error{{word-break:break-all;white-space:pre-wrap}}
+</style>
 </head>
 <body>
     <div class="header">
@@ -1486,15 +1616,14 @@ class TestExecutionViewSet(viewsets.ReadOnlyModelViewSet):
                         a_name = a.get('name', '未命名断言')
                         a_passed = bool(a.get('passed', False))
                         step_entry = {
-                            "name": f"断言: {a_name}",
+                            "name": (f"断言: {a_name} | 期望: {a.get('expected')} | 实际: {a.get('actual')}" + (f" | 错误: {a.get('error')}" if a.get('error') else "")),
                             "status": "passed" if a_passed else "failed",
                             "stage": "finished",
                             "start": stop_ms,
                             "stop": stop_ms,
                             "steps": []
                         }
-                        if not a_passed and a.get('error'):
-                            step_entry["statusDetails"] = {"message": str(a.get('error'))[:5000], "trace": ""}
+                        if not a_passed: step_entry["statusDetails"] = {"message": (f"期望: {a.get('expected')} | 实际: {a.get('actual')}" + (f" | 错误: {a.get('error')}" if a.get('error') else "")), "trace": f"断言失败: {a_name}\n期望: {a.get('expected')}\n实际: {a.get('actual')}"}
                         steps.append(step_entry)
 
                 request_result = {
@@ -1529,8 +1658,16 @@ class TestExecutionViewSet(viewsets.ReadOnlyModelViewSet):
                 if error:
                     request_result["statusDetails"] = {
                         "message": str(error)[:5000],
-                        "trace": ""
+                        "trace": str(error)[:5000]
                     }
+
+                # 添加环境标签（套件设置了环境时）
+                _env_obj = getattr(execution.test_suite, 'environment', None)
+                if _env_obj is not None:
+                    request_result["labels"].append({"name": "environment", "value": _env_obj.name})
+
+                    with open(os.path.join(report_dir, "environment.xml"), "w", encoding="utf-8") as _ef:
+                        _ef.write("<environment><parameter><key>Environment</key><value>" + _env_obj.name + "</value></parameter></environment>")
 
                 # 保存请求结果
                 request_file_path = os.path.join(report_dir, f'{request_uuid}-result.json')
@@ -1556,24 +1693,33 @@ class TestExecutionViewSet(viewsets.ReadOnlyModelViewSet):
 
     @staticmethod
     def _format_request_text(request_data, method, url):
-        """格式化请求详情文本"""
+        """格式化请求详情文本（优先展示解密后的明文）"""
+        # 若执行时保存了明文请求（decrypted），优先展示明文
+        decrypted = request_data.get('decrypted')
+        if isinstance(decrypted, dict) and decrypted:
+            url = decrypted.get('url', url)
+            headers = decrypted.get('headers')
+            params = decrypted.get('params')
+            body = decrypted.get('body')
+        else:
+            headers = request_data.get('headers')
+            params = request_data.get('params')
+            body = request_data.get('body')
+
         lines = []
         lines.append(f"Method: {method}")
         lines.append(f"URL: {url}")
         lines.append("")
-        headers = request_data.get('headers') or {}
         lines.append("== 请求头 ==")
         if isinstance(headers, dict):
             for k, v in headers.items():
                 lines.append(f"{k}: {v}")
         else:
-            lines.append(str(headers))
+            lines.append(str(headers) if headers is not None else "(无)")
         lines.append("")
-        params = request_data.get('params') or {}
         lines.append("== 请求参数 ==")
-        lines.append(str(params))
+        lines.append(str(params) if params else "(无)")
         lines.append("")
-        body = request_data.get('body')
         lines.append("== 请求体 ==")
         if body is None:
             lines.append("(无)")
@@ -1588,7 +1734,19 @@ class TestExecutionViewSet(viewsets.ReadOnlyModelViewSet):
 
     @staticmethod
     def _format_response_body(response_data):
-        """格式化响应体文本"""
+        """格式化响应体文本（优先展示解密后的明文）"""
+        # 若执行时解密成功，优先展示明文响应
+        decrypted = response_data.get('decrypted')
+        if decrypted is not None and decrypted != '':
+            if isinstance(decrypted, str):
+                try:
+                    return json.dumps(json.loads(decrypted), ensure_ascii=False, indent=2)
+                except Exception:
+                    return decrypted
+            try:
+                return json.dumps(decrypted, ensure_ascii=False, indent=2)
+            except Exception:
+                return str(decrypted)
         body = response_data.get('body')
         if body is None:
             resp_json = response_data.get('json')

@@ -230,6 +230,9 @@ export default {
     // 断言
     assertions: '断言',
     addAssertion: '添加断言',
+    assertionType: '断言类型',
+    assertionValue: '期望值/路径',
+    assertionValuePlaceholder: '请输入期望值或JSON路径',
     assertionName: '断言名称',
     selectAssertionType: '选择断言类型',
     assertionTypes: {
@@ -321,6 +324,7 @@ export default {
     assertionCount: '{n} 个',
     assertions: '断言',
     editAssertions: '编辑断言',
+    newAssertion: '新断言',
     remove: '移除',
     executionHistory: '执行历史',
     totalRequests: '总请求数',

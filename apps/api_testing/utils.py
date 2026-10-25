@@ -110,7 +110,7 @@ def execute_assertions(response, assertions, text_override=None, json_override=N
             elif assertion_type == 'contains':
                 text = text_override if text_override is not None else (response.text or '')
                 pattern = str(expected)
-                actual = text[:200] + '...' if len(text) > 200 else text
+                actual = text
                 passed = pattern in str(text)
                 
             elif assertion_type == 'json_path':
@@ -562,3 +562,79 @@ def _resolve_variables_in_dict(data, resolver):
         return resolver.resolve(data)
     else:
         return data
+
+
+class SimpleResponse:
+    """轻量响应对象，供 execute_assertions 使用（WebSocket 无标准 requests.Response）。"""
+
+    def __init__(self, status_code, text, headers=None, json_value=None):
+        self.status_code = status_code
+        self.text = text or ''
+        self.headers = headers or {}
+        self._json = json_value
+
+    def json(self):
+        if self._json is not None:
+            return self._json
+        raise ValueError('响应不是JSON格式')
+
+
+def execute_websocket(url, body, headers=None, timeout=15):
+    """
+    执行 WebSocket 请求：连接、发送一条消息、接收一条消息。
+
+    body 为 dict 时序列化为 JSON 文本发送；为 str 时原样发送。
+    返回 (ok, status_code, text, json_value, error)。
+    """
+    try:
+        import asyncio
+        import websockets
+    except ImportError:
+        return False, None, '', None, 'websockets 库未安装'
+
+    if not url:
+        return False, None, '', None, 'WebSocket URL 为空'
+    ws_url = url if ('://' in url) else f'ws://{url}'
+    if not ws_url.startswith(('ws://', 'wss://')):
+        return False, None, '', None, f'非 WebSocket URL: {url}'
+
+    message = body
+    if isinstance(message, dict):
+        message = json.dumps(message, ensure_ascii=False)
+    elif message is None:
+        message = ''
+    else:
+        message = str(message)
+
+    async def _inner():
+        connect_kwargs = {
+            'open_timeout': timeout,
+        }
+        extra_headers = {}
+        if headers:
+            for k, v in headers.items():
+                if k and v:
+                    extra_headers[str(k)] = str(v)
+        if extra_headers:
+            # websockets>=10 使用 additional_headers
+            connect_kwargs['additional_headers'] = extra_headers
+        async with websockets.connect(ws_url, **connect_kwargs) as ws:
+            if message:
+                await ws.send(message)
+            try:
+                reply = await asyncio.wait_for(ws.recv(), timeout)
+            except asyncio.TimeoutError:
+                reply = ''
+        return reply
+
+    try:
+        reply = asyncio.run(_inner())
+    except Exception as e:
+        return False, None, '', None, str(e)
+
+    json_value = None
+    try:
+        json_value = json.loads(reply) if reply else None
+    except Exception:
+        json_value = None
+    return True, 200, reply, json_value, None

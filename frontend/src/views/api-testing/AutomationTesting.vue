@@ -128,9 +128,11 @@
                   />
                 </template>
               </el-table-column>
-              <el-table-column :label="$t('apiTesting.automation.assertions')" width="100">
+              <el-table-column :label="$t('apiTesting.automation.assertions')" width="110">
                 <template #default="scope">
-                  {{ $t('apiTesting.automation.assertionCount', { n: scope.row.assertions?.length || 0 }) }}
+                  <el-link type="primary" @click="editAssertions(scope.row)">
+                    {{ (scope.row.request?.assertions?.length || 0) + (scope.row.assertions?.length || 0) }}
+                  </el-link>
                 </template>
               </el-table-column>
               <el-table-column :label="$t('apiTesting.common.operation')" width="150">
@@ -253,6 +255,75 @@
         <el-button @click="showCreateSuiteDialog = false">{{ $t('apiTesting.common.cancel') }}</el-button>
         <el-button type="primary" @click="submitSuiteForm" :loading="submittingSuite">
           {{ editingSuite ? $t('apiTesting.common.update') : $t('apiTesting.common.create') }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 断言编辑对话框 -->
+    <el-dialog
+      v-model="showAssertionsDialog"
+      :title="$t('apiTesting.automation.editAssertions')"
+      width="760px"
+      :close-on-click-modal="false"
+    >
+      <div v-if="assertionTarget">
+        <p class="assertion-dialog-title">
+          {{ $t('apiTesting.automation.requestName') }}：{{ assertionTarget.request?.name }}
+        </p>
+        <div class="assertion-toolbar">
+          <el-button size="small" type="primary" @click="addReqAssertion">
+            {{ $t('apiTesting.interface.addAssertion') }}
+          </el-button>
+          <el-button size="small" @click="resetReqAssertions">
+            {{ $t('apiTesting.common.reset') }}
+          </el-button>
+        </div>
+        <el-table :data="editingAssertions" border style="margin-top: 10px">
+          <el-table-column type="index" width="50" />
+          <el-table-column :label="$t('apiTesting.interface.assertionType')" width="140">
+            <template #default="scope">
+              <el-select v-model="scope.row.type" size="small">
+                <el-option :label="$t('apiTesting.interface.assertionTypes.statusCode')" value="status_code" />
+                <el-option :label="$t('apiTesting.interface.assertionTypes.contains')" value="contains" />
+                <el-option :label="$t('apiTesting.interface.assertionTypes.jsonPath')" value="json_path" />
+                <el-option :label="$t('apiTesting.interface.assertionTypes.equals')" value="equals" />
+                <el-option :label="$t('apiTesting.interface.assertionTypes.header')" value="header" />
+                <el-option :label="$t('apiTesting.interface.assertionTypes.responseTime')" value="response_time" />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column :label="$t('apiTesting.interface.assertionValue')">
+            <template #default="scope">
+              <el-input
+                v-if="scope.row.type === 'json_path'"
+                v-model="scope.row.json_path"
+                size="small"
+                placeholder="$.xxx.xxx"
+              />
+              <el-input
+                v-else
+                v-model="scope.row.expected"
+                size="small"
+                :placeholder="$t('apiTesting.interface.assertionValuePlaceholder')"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column label="" width="70">
+            <template #default="scope">
+              <el-button link type="danger" @click="removeReqAssertion(scope.$index)">
+                {{ $t('apiTesting.common.delete') }}
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <div v-if="editingAssertions.length === 0" class="empty-assertions">
+          {{ $t('apiTesting.automation.noAssertions') }}
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showAssertionsDialog = false">{{ $t('apiTesting.common.cancel') }}</el-button>
+        <el-button type="primary" @click="saveAssertionsDialog" :loading="savingAssertions">
+          {{ $t('apiTesting.common.save') }}
         </el-button>
       </template>
     </el-dialog>
@@ -413,7 +484,8 @@ const requestTreeProps = {
 }
 
 const httpProjects = computed(() => {
-  return projects.value.filter(project => project.project_type !== 'WEBSOCKET')
+  // 自动化测试支持 HTTP 与 WEBSOCKET 项目（套件内按请求的 method 执行）
+  return projects.value.slice()
 })
 
 const getMethodType = (method) => {
@@ -491,14 +563,11 @@ const loadProjects = async () => {
   try {
     projects.value = await fetchAll('/api-testing/projects/')
 
-    // 过滤出HTTP项目
-    const httpProjects = projects.value.filter(project => project.project_type !== 'WEBSOCKET')
-
-    if (httpProjects.length > 0 && !selectedProject.value) {
-      selectedProject.value = httpProjects[0].id
+    if (projects.value.length > 0 && !selectedProject.value) {
+      selectedProject.value = projects.value[0].id
       await onProjectChange()
-    } else if (httpProjects.length === 0) {
-      // 如果没有HTTP项目，清空选择
+    } else if (projects.value.length === 0) {
+      // 如果没有项目，清空选择
       selectedProject.value = null
     }
   } catch (error) {
@@ -628,20 +697,6 @@ const loadExecutions = async () => {
 }
 
 const onProjectChange = async () => {
-  // 检查选中的项目是否为HTTP项目
-  const selectedProjectData = projects.value.find(p => p.id === selectedProject.value)
-  if (selectedProjectData && selectedProjectData.project_type === 'WEBSOCKET') {
-    ElMessage.warning(t('apiTesting.messages.warning.websocketNotSupported'))
-    // 重置为第一个HTTP项目或清空选择
-    const httpProjects = projects.value.filter(project => project.project_type !== 'WEBSOCKET')
-    if (httpProjects.length > 0) {
-      selectedProject.value = httpProjects[0].id
-    } else {
-      selectedProject.value = null
-    }
-    return
-  }
-
   selectedSuite.value = null
   await Promise.all([
     loadTestSuites(),
@@ -840,8 +895,52 @@ const updateRequestEnabled = async (suiteRequest) => {
   }
 }
 
+const showAssertionsDialog = ref(false)
+const assertionTarget = ref(null)
+const editingAssertions = ref([])
+const savingAssertions = ref(false)
+
 const editAssertions = (suiteRequest) => {
-  ElMessage.info(t('apiTesting.messages.info.featureInDevelopment'))
+  assertionTarget.value = suiteRequest
+  const req = suiteRequest.request
+  editingAssertions.value = (req?.assertions || []).map(a => ({ ...a }))
+  showAssertionsDialog.value = true
+}
+
+const resetReqAssertions = () => {
+  const req = assertionTarget.value?.request
+  editingAssertions.value = (req?.assertions || []).map(a => ({ ...a }))
+}
+
+const addReqAssertion = () => {
+  editingAssertions.value.push({
+    name: t('apiTesting.automation.newAssertion'),
+    type: 'status_code',
+    expected: 200,
+    json_path: ''
+  })
+}
+
+const removeReqAssertion = (index) => {
+  editingAssertions.value.splice(index, 1)
+}
+
+const saveAssertionsDialog = async () => {
+  const req = assertionTarget.value?.request
+  if (!req) return
+  savingAssertions.value = true
+  try {
+    await api.put(`/api-testing/requests/${req.id}/`, {
+      assertions: editingAssertions.value
+    })
+    ElMessage.success(t('apiTesting.messages.success.saveSuccess'))
+    showAssertionsDialog.value = false
+    await reloadCurrentSuite()
+  } catch (error) {
+    ElMessage.error(t('apiTesting.messages.error.saveFailed'))
+  } finally {
+    savingAssertions.value = false
+  }
 }
 
 const removeRequest = async (suiteRequest) => {
