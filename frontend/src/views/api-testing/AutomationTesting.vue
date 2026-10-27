@@ -533,6 +533,11 @@ const getExecutionTime = (execution) => {
 }
 
 const getAverageExecutionTime = (execution) => {
+  // 优先使用后端计算的 average_response_time（列表接口精简，不含 results）
+  if (execution.average_response_time != null) {
+    const avg = execution.average_response_time
+    return avg < 1000 ? `${Math.round(avg)}ms` : `${(avg / 1000).toFixed(1)}s`
+  }
   if (!execution.results || !Array.isArray(execution.results) || execution.results.length === 0) {
     return '-'
   }
@@ -983,8 +988,13 @@ const reloadCurrentSuite = async () => {
   }
 }
 
-const viewExecutionDetail = (execution) => {
-  currentExecution.value = execution
+const viewExecutionDetail = async (execution) => {
+  try {
+    const response = await api.get(`/api-testing/test-executions/${execution.id}/`)
+    currentExecution.value = response.data
+  } catch (e) {
+    currentExecution.value = execution
+  }
   showExecutionDialog.value = true
 }
 

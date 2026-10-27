@@ -152,7 +152,8 @@ class ApiRequestViewSet(viewsets.ModelViewSet):
                 )
             ).distinct()
 
-        return queryset
+        # select_related 减少 created_by（UserSerializer 嵌套）序列化时的 N+1 查询
+        return queryset.select_related('created_by')
 
     def perform_create(self, serializer):
         """创建接口时记录日志"""
@@ -1940,15 +1941,32 @@ class ScheduledTaskViewSet(viewsets.ModelViewSet):
                 else:
                     raise ValueError(f"未知的任务类型: {task.task_type}")
                 
+                # 根据真实结果判断执行状态（套件有失败用例 / API 断言失败 也视为失败）
+                _real_success = True
+                _fail_detail = ''
+                if isinstance(result, dict):
+                    if not result.get('success', True):
+                        _real_success = False
+                        _fail_detail = str(result.get('error') or '执行失败')
+                    elif result.get('failed_count', 0) > 0:
+                        _real_success = False
+                        _errs = []
+                        for _r in (result.get('results') or []):
+                            if not _r.get('passed', True) and _r.get('error'):
+                                _errs.append(f"{_r.get('name')}: {_r.get('error')}")
+                        _fail_detail = '; '.join(_errs) or f"{result.get('failed_count')} 个用例失败"
+
                 # 更新执行结果
-                execution_log.status = 'COMPLETED'
+                execution_log.status = 'COMPLETED' if _real_success else 'FAILED'
                 execution_log.end_time = timezone.now()
                 execution_log.result = result
                 execution_log.save()
                 
                 # 更新任务统计
-                task.update_run_stats(success=True)
+                task.update_run_stats(success=_real_success)
                 task.last_result = result
+                if not _real_success:
+                    task.error_message = _fail_detail
                 task.save()
                 
                 logger.info("=== 开始检查发送成功通知 ===")
@@ -1971,12 +1989,20 @@ class ScheduledTaskViewSet(viewsets.ModelViewSet):
                     logger.info("任务没有notification_settings属性")
                 
                 if notification_setting and notification_setting.is_enabled:
-                    logger.info("通知设置已启用，准备发送成功通知")
-                    if notification_setting.notify_on_success:
-                        logger.info("调用 _send_notification 方法发送成功通知")
-                        self._send_notification(task, execution_log, success=True)
+                    if _real_success:
+                        logger.info("通知设置已启用，准备发送成功通知")
+                        if notification_setting.notify_on_success:
+                            logger.info("调用 _send_notification 方法发送成功通知")
+                            self._send_notification(task, execution_log, success=True)
+                        else:
+                            logger.info("通知设置中未启用成功通知")
                     else:
-                        logger.info("通知设置中未启用成功通知")
+                        logger.info("执行失败，准备发送失败通知")
+                        if notification_setting.notify_on_failure:
+                            logger.info("调用 _send_notification 方法发送失败通知")
+                            self._send_notification(task, execution_log, success=False)
+                        else:
+                            logger.info("通知设置中未启用失败通知")
                 else:
                     logger.info("通知设置未启用或不存在，跳过成功通知")
                 logger.info("=== 结束检查发送成功通知 ===")

@@ -251,6 +251,20 @@ def execute_test_suite(test_suite, environment, executed_by):
                         body_data = _replace_variables_in_dict(body_data, variables)
                         body_data = _resolve_variables_in_dict(body_data, resolver)
                 
+                # 执行请求前脚本（可修改 params/headers/body 实现参数加密）
+                if api_request.pre_request_script and api_request.pre_request_script.strip():
+                    _pre_ctx = run_pre_request_script(api_request.pre_request_script, {
+                        'params': params,
+                        'headers': headers,
+                        'body': body_data,
+                        'url': url,
+                        'variables': variables,
+                    })
+                    params = _pre_ctx.get('params', params)
+                    headers = _pre_ctx.get('headers', headers)
+                    body_data = _pre_ctx.get('body', body_data)
+                    url = _pre_ctx.get('url', url)
+
                 # 执行请求
                 start_time = time.time()
                 response = requests.request(
@@ -264,13 +278,34 @@ def execute_test_suite(test_suite, environment, executed_by):
                 end_time = time.time()
                 response_time = (end_time - start_time) * 1000
                 
+                # 执行请求后脚本（可解密响应，供明文断言与展示）
+                decrypted_body = None
+                if api_request.post_request_script and api_request.post_request_script.strip():
+                    try:
+                        _resp_json = response.json() if response.headers.get('content-type', '').startswith('application/json') else None
+                    except Exception:
+                        _resp_json = None
+                    _post_ctx = run_post_request_script(api_request.post_request_script, {
+                        'response_text': response.text,
+                        'response_json': _resp_json,
+                        'status_code': response.status_code,
+                        'variables': variables,
+                    })
+                    decrypted_body = _post_ctx.get('decrypted_body')
+
                 # 执行断言验证
                 assertions = api_request.assertions or []
                 for assertion in assertions:
                     if assertion.get('type') == 'response_time':
                         assertion['actual_time'] = response_time
                 
-                assertions_results = execute_assertions(response, assertions)
+                _decrypted_json = None
+                if decrypted_body:
+                    try:
+                        _decrypted_json = json.loads(decrypted_body)
+                    except Exception:
+                        _decrypted_json = None
+                assertions_results = execute_assertions(response, assertions, text_override=decrypted_body, json_override=_decrypted_json)
                 
                 # 检查所有断言是否通过
                 passed = True
@@ -290,7 +325,7 @@ def execute_test_suite(test_suite, environment, executed_by):
                     for assertion_result in assertions_results:
                         if not assertion_result.get('passed', True):
                             passed = False
-                            error_message = f"断言失败: {assertion_result.get('name', '未命名断言')} - {assertion_result.get('error', '断言不通过')}"
+                            error_message = f"断言失败: {assertion_result.get('name', '未命名断言')} | 期望: {assertion_result.get('expected')} | 实际: {assertion_result.get('actual')} {('- ' + str(assertion_result.get('error')) if assertion_result.get('error') else '')}"
                             break
                 
                 if passed:
@@ -321,6 +356,7 @@ def execute_test_suite(test_suite, environment, executed_by):
                         'headers': dict(response.headers),
                         'body': response.text,
                         'json': response.json() if response.headers.get('content-type', '').startswith('application/json') else None,
+                        'decrypted': decrypted_body,
                     },
                 })
                 
@@ -338,7 +374,8 @@ def execute_test_suite(test_suite, environment, executed_by):
                     response_data={
                         'headers': dict(response.headers),
                         'body': response.text,
-                        'json': response.json() if response.headers.get('content-type', '').startswith('application/json') else None
+                        'json': response.json() if response.headers.get('content-type', '').startswith('application/json') else None,
+                        'decrypted': decrypted_body
                     },
                     status_code=response.status_code,
                     response_time=response_time,

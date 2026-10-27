@@ -1166,7 +1166,7 @@ const loadCollections = async (projectId) => {
     let collectionsData = []
     while (true) {
       const response = await api.get('/api-testing/collections/', {
-        params: { project: projectId, page }
+        params: { project: projectId, page, page_size: 500 }
       })
       const data = response.data
       const pageResults = data.results || data || []
@@ -1255,7 +1255,7 @@ const loadRequests = async () => {
     let page = 1
     let requests = []
     while (true) {
-      const response = await api.get('/api-testing/requests/', { params: { page } })
+      const response = await api.get('/api-testing/requests/', { params: { page, page_size: 500 } })
       const data = response.data
       const pageResults = data.results || data || []
       requests = requests.concat(pageResults)
@@ -2543,8 +2543,11 @@ biz = {
 }
 s = aes_encrypt(_j.dumps(biz, ensure_ascii=False), key).replace('=', '%3D').replace('&', '%26')
 o = aes_encrypt(_j.dumps({"Os": "", "DeviceId": "Utility", "AppVer": "0"}), key)
-params['s'] = s
-params['o'] = o`
+body={
+  's' = s,
+  'o' = o
+}
+`
     }
   } else if (field === 'post_request_script') {
     snippet = `# 解密响应中的 r 字段，赋给 decrypted_body 后前端将明文展示

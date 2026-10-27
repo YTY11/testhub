@@ -220,13 +220,21 @@ class TestExecutionListSerializer(serializers.ModelSerializer):
     executed_by = UserSerializer(read_only=True)
     test_suite_name = serializers.CharField(source='test_suite.name', read_only=True)
     project_name = serializers.CharField(source='test_suite.project.name', read_only=True)
+    average_response_time = serializers.SerializerMethodField()
+
+    def get_average_response_time(self, obj):
+        results = obj.results or []
+        times = [r.get('response_time') for r in results if isinstance(r, dict) and r.get('response_time') is not None]
+        if not times:
+            return None
+        return round(sum(times) / len(times), 1)
 
     class Meta:
         model = TestExecution
         fields = [
             'id', 'status', 'start_time', 'end_time',
             'total_requests', 'passed_requests', 'failed_requests',
-            'executed_by', 'created_at', 'test_suite_name', 'project_name'
+            'executed_by', 'created_at', 'test_suite_name', 'project_name', 'average_response_time'
         ]
 
 
